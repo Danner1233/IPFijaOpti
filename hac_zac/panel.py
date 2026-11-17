@@ -511,15 +511,27 @@ class PanelPlantilla(tk.Frame):
             self._recargar(self.sv.regenerar(self.rec["key"]))
 
     def _guardar(self, nombre=""):
+        """Guarda el .txt. Devuelve True si quedo guardado."""
         if not self.rec:
-            return
+            return False
         try:
             ruta = self.sv.guardar_txt(self.rec["key"], self._texto(), nombre)
         except Exception as e:
             messagebox.showerror("No se pudo guardar", str(e))
-            return
+            return False
         self._recargar(self.sv.store.cargar(self.rec["key"]))
         self.lbl_est.config(text="Guardado en: %s" % ruta)
+        return True
+
+    def sin_guardar(self):
+        """True si hay una plantilla abierta cuyo .txt no existe o no tiene lo que se ve en pantalla."""
+        if not self.rec:
+            return False
+        try:
+            from .plantilla import esta_guardada
+            return not esta_guardada(self._texto(), self.rec.get("archivo"))
+        except Exception:
+            return False
 
     def _con_nombre(self):
         if not self.rec:

@@ -589,6 +589,26 @@ def guardar(texto: str, ruta: Path) -> Path:
     return ruta
 
 
+def _normal(t: str) -> str:
+    return "\n".join(x.rstrip() for x in (t or "").replace("\r", "").split("\n")).strip()
+
+
+def esta_guardada(texto: str, ruta) -> bool:
+    """True si el .txt existe y tiene la plantilla tal como se ve (puede traer al final el caso TCO/INCLA que se
+    agrega aparte). Plantilla vacia = nada que guardar."""
+    actual = _normal(texto)
+    if not actual:
+        return True
+    if not ruta:
+        return False
+    try:
+        with open(str(ruta), encoding="utf-8", newline="") as f:     # sin traducir saltos: lo hace _normal
+            en_disco = _normal(f.read())
+    except (OSError, UnicodeDecodeError):
+        return False
+    return en_disco == actual or en_disco.startswith(actual + "\n")
+
+
 def agregar_caso(ruta: Path, numero_caso: str, descripcion: str = "") -> None:
     """Agrega al final del .txt el número de caso (TCO/INCLA) y, si hay, la descripción del bridge."""
     extra = "\n \n{}\n".format(numero_caso.strip())

@@ -267,11 +267,43 @@ class App(tk.Tk):
         self._linea.pack(fill="x", padx=26, pady=(0, 8))
         self._linea.bind("<Configure>", self._pintar_linea)
 
-    def _nueva_solicitud(self):
+    def _plantilla_guardada_o_preguntar(self, puede_cancelar=True):
+        """Antes de empezar otra solicitud: si la plantilla abierta no esta guardada en su .txt, pregunta.
+        Si esta guardada no dice nada. Devuelve False solo si el usuario cancela (no se empieza la nueva).
+        Si dijo "No" a esa misma plantilla, no se vuelve a preguntar."""
+        v = self.v_res
+        try:
+            if not v.sin_guardar():
+                return True
+            firma = (v.rec.get("key"), v._texto())
+        except Exception:
+            return True
+        if firma == getattr(self, "_no_guardar", None):
+            return True
+        quien = v.rec.get("id") or v.rec.get("rr") or ""
+        msg = ("La plantilla de la solicitud %s no está guardada en su archivo .txt.\n\n"
+               "¿Desea guardarla antes de iniciar la nueva solicitud?" % quien)
+        if puede_cancelar:
+            r = messagebox.askyesnocancel("Plantilla sin guardar", msg + "\n\n(Cancelar: no inicia la nueva.)",
+                                          icon="warning", parent=self)
+            if r is None:
+                return False
+        else:
+            r = messagebox.askyesno("Plantilla sin guardar", msg, icon="warning", parent=self)
+        if r:
+            if not v._guardar() and puede_cancelar:
+                return False                    # no se pudo guardar: se queda para que lo resuelva
+        else:
+            self._no_guardar = firma
+        return True
+
+    def _nueva_solicitud(self, preguntar=True):
         """Deja el formulario limpio para otra solicitud (el script ya volvio al jump host y espera)."""
         if self.corriendo:
             messagebox.showinfo("En proceso", "Hay una solicitud en proceso. Espere a que termine o cancele.")
-            return
+            return False
+        if preguntar and not self._plantilla_guardada_o_preguntar():
+            return False
         v = getattr(self.v_res, "ventana_ips", None)
         if v and v.winfo_exists():
             v.destroy()
@@ -285,6 +317,7 @@ class App(tk.Tk):
         self.rec_actual = None
         self._mostrar(self.v_form)
         self.t_sol.focus_set()
+        return True
 
     def _pestanas(self):
         """Modo sencillo: Operación, Cola, Historial y Ajustes. Modo avanzado: agrega IP Capa 2 y Admin."""
@@ -392,6 +425,8 @@ class App(tk.Tk):
             if self.corriendo:
                 messagebox.showinfo("En proceso", "Hay una solicitud en proceso. Cuando termine, pulse Procesar de nuevo.")
                 return
+            if not self._plantilla_guardada_o_preguntar():      # antes de marcarla en proceso
+                return
             cola.cambiar_estado(s["id"], "en_proceso")
             self._aplicar_caso(caso)
             self.v_cola.refrescar()
@@ -425,8 +460,11 @@ class App(tk.Tk):
         self.after(3000, self._latir)
 
     def _aplicar_caso(self, caso):
-        """Pasa los datos del caso al formulario y arranca una nueva solicitud en el script que ya esta abierto."""
-        self._nueva_solicitud()
+        """Pasa los datos del caso al formulario y arranca una nueva solicitud en el script que ya esta abierto.
+        El caso ya viene marcado en proceso (Cola / Centro de control): se pregunta por la plantilla sin guardar,
+        pero sin opcion de cancelar."""
+        self._plantilla_guardada_o_preguntar(puede_cancelar=False)
+        self._nueva_solicitud(preguntar=False)
         self.t_sol.insert("1.0", caso.get("txt_sol", ""))
         self._leer_solicitud()
         self._mostrar(self.v_form)
@@ -585,6 +623,8 @@ class App(tk.Tk):
             self.lbl_err.config(text="Las megas deben ser un numero entero. Ej: 950")
             return
         self.lbl_err.config(text="")
+        if not self._plantilla_guardada_o_preguntar():
+            return
         escribir_json(os.path.join(self.carpeta, "solicitud.json"), {
             "valor": valor, "megas": megas, "bridge": self.bridge.get(),
             "txt_sol": self.t_sol.get("1.0", "end").strip(),
