@@ -365,6 +365,22 @@ def registrar_desde_central(d, nombre):
     return True
 
 
+@bloqueado
+def actualizar_chat(id_, chat, para_pem):
+    """Conversacion del agente con el tecnico (la manda el central). Devuelve True si hay preguntas NUEVAS del
+    tecnico para mi."""
+    c = _cola()
+    for s in c["solicitudes"]:
+        if s["id"] == str(id_):
+            antes = len(s.get("para_pem") or [])
+            if s.get("chat") == chat and s.get("para_pem") == para_pem:
+                return False
+            s["chat"], s["para_pem"] = list(chat or []), list(para_pem or [])
+            _escribir("cola.json", c)
+            return len(s["para_pem"]) > antes
+    return False
+
+
 def es_del_central(id_):
     return any(s["id"] == str(id_) and s.get("origen") == "central" for s in solicitudes())
 

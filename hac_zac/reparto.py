@@ -145,6 +145,8 @@ def latido(estado, nombre, disponible, documentadas, ahora):
         caso = dict(a["datos"])
         if a.get("correo"):
             caso["_correo"] = a["correo"]          # {"texto", "recibido"}: la plantilla completa del correo
+        caso["_chat"] = list(a.get("chat") or [])            # conversacion del agente con el tecnico
+        caso["_para_pem"] = list(a.get("para_pem") or [])    # lo que el tecnico pregunto y espera respuesta
         casos.append(caso)
     return casos, pedir_sp
 

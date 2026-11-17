@@ -61,19 +61,48 @@ def aplicar_respuesta(resp):
     nombre = resp.get("pem") or ""
     nuevos = []
     con_plantilla = {s["id"] for s in cola.solicitudes() if s.get("plantilla")}
+    preguntas = []
     for d in resp.get("casos") or []:
         d = dict(d)
         correo = d.pop("_correo", None)
+        chat, para_pem = d.pop("_chat", None), d.pop("_para_pem", None)
         if not d.get("id"):
             continue
         if cola.registrar_desde_central(d, nombre):
             nuevos.append(str(d["id"]))
+        if chat is not None and cola.actualizar_chat(d["id"], chat, para_pem):
+            preguntas.append(str(d["id"]))
         if correo and str(d["id"]) not in con_plantilla:
             # el central ya confirmo que el correo trae ESTE SOLICITUD ID: se une por ID
             cola.registrar_correo(correo.get("texto", ""), recibido=correo.get("recibido") or None)
     for i in resp.get("confirmadas") or []:
         cola.resultado_sp(str(i), True, "")
+    aplicar_respuesta.preguntas = preguntas          # ids con mensajes nuevos del tecnico (para avisar)
     return nuevos
+
+
+aplicar_respuesta.preguntas = []
+
+
+def enviar_mensaje(ajustes, id_, texto, tipo="mensaje"):
+    """El PEM le escribe al tecnico (el agente lo reenvia literal). tipo: 'mensaje' o 'direccionamiento'."""
+    url, token = config(ajustes)
+    if not url:
+        raise ConnectionError("Reparto central sin configurar (Ajustes).")
+    cuerpo = json.dumps({"id": str(id_), "texto": texto, "tipo": tipo}).encode("utf-8")
+    req = urllib.request.Request(url + "/mensaje", data=cuerpo, method="POST", headers={
+        "Content-Type": "application/json", "Authorization": "Bearer " + token})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode("utf-8")).get("error") or str(e)
+        except Exception:
+            msg = str(e)
+        raise ConnectionError(msg)
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise ConnectionError("Sin conexion con el servidor central (%s)" % getattr(e, "reason", e))
 
 
 def plantillas_listas():
@@ -119,6 +148,7 @@ class Conexion:
         nuevos = aplicar_respuesta(resp)
         plantillas = [i for i in plantillas_listas() if i not in antes]
         return {"ok": True, "pem": resp.get("pem", ""), "nuevos": nuevos, "plantillas": plantillas,
+                "preguntas": list(aplicar_respuesta.preguntas),
                 "simulacion": bool(resp.get("simulacion")), "correo_central": bool(resp.get("correo_central")),
                 "mensaje": "Conectado como %s" % resp.get("pem", "")}
 

@@ -185,6 +185,9 @@ class PanelCola(tk.Frame):
         self.t.bind("<Double-1>", lambda e: self._procesar())
         self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w")
         self.lbl.pack(fill="x")
+        if self.central:
+            self._tarjeta_tecnico()
+            self.t.bind("<<TreeviewSelect>>", lambda e: self._pintar_chat(forzar=True), add="+")
         self.refrescar()
 
     # ---------------------------------------------------------------- reparto central
@@ -207,6 +210,89 @@ class PanelCola(tk.Frame):
         self._pintar_disponible()
         self.conexion = central_cliente.Conexion(self.sv.ajustes, lambda est: self.after(0, self._estado_central, est))
         self.conexion.iniciar()
+
+    def _tarjeta_tecnico(self):
+        """Conversacion con el tecnico de la solicitud seleccionada. El PEM no chatea: el agente le reenvia LITERAL
+        lo que se escriba aqui, y le trae lo que el tecnico pregunte."""
+        card = tk.Frame(self, bg=P.C["card"], highlightbackground=P.C["line"], highlightcolor=P.C["line"],
+                        highlightthickness=1)
+        card.pack(fill="both", expand=True, pady=(8, 0))
+        inner = tk.Frame(card, bg=P.C["card"])
+        inner.pack(fill="both", expand=True, padx=18, pady=12)
+        self.lbl_tec = tk.Label(inner, text="Técnico: seleccione una solicitud", bg=P.C["card"], fg=P.C["txt"],
+                                font=(P.FONT, 11, "bold"), anchor="w")
+        self.lbl_tec.pack(fill="x")
+        self.chat = tk.Text(inner, height=7, bg=P.C["bg"], fg=P.C["txt"], relief="flat", font=(P.FONT, 10),
+                            state="disabled", wrap="word", highlightthickness=1, highlightbackground=P.C["line"])
+        self.chat.pack(fill="both", expand=True, pady=(6, 6))
+        for tag, color in (("tecnico", P.C["acc"]), ("agente", P.C["mut"]), ("pem", P.C["ok"]), ("pend", P.C["warn"])):
+            self.chat.tag_configure(tag, foreground=color)
+        tk.Label(inner, text="Mensaje para el técnico (se envía tal cual por WhatsApp):", bg=P.C["card"],
+                 fg=P.C["mut"], font=(P.FONT, 9), anchor="w").pack(fill="x")
+        self.e_msg = tk.Text(inner, height=3, bg=P.C["card2"], fg=P.C["txt"], insertbackground=P.C["txt"],
+                             relief="flat", font=(P.FONT, 10), wrap="word")
+        self.e_msg.pack(fill="x", pady=(2, 6))
+        b = P.ad.Flujo(inner, P.C["card"])
+        b.pack(fill="x")
+        P.BOTON(b, "Enviar mensaje", lambda: self._enviar_tecnico("mensaje"), False, 15).pack(side="left")
+        P.BOTON(b, "Enviar direccionamiento final", lambda: self._enviar_tecnico("direccionamiento"),
+                True, 26).pack(side="left", padx=6)
+        self.lbl_envio = tk.Label(inner, text="", bg=P.C["card"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w")
+        self.lbl_envio.pack(fill="x", pady=(4, 0))
+        self._firma_chat = None
+
+    def _pintar_chat(self, forzar=False):
+        if not getattr(self, "chat", None):
+            return
+        s = self._caso()
+        firma = (s["id"], len(s.get("chat") or []), len(s.get("para_pem") or [])) if s else None
+        if firma == self._firma_chat and not forzar:
+            return
+        self._firma_chat = firma
+        self.chat.config(state="normal")
+        self.chat.delete("1.0", "end")
+        if not s:
+            self.lbl_tec.config(text="Técnico: seleccione una solicitud")
+        else:
+            d = s["datos"]
+            self.lbl_tec.config(text="Técnico de la %s: %s · %s" % (s["id"], d.get("tecnico") or "—",
+                                                                  d.get("celular_tecnico") or "sin celular"))
+            quien = {"tecnico": "Técnico", "agente": "Asistente", "pem": "Usted"}
+            for m in s.get("chat") or []:
+                self.chat.insert("end", "%s  %s: " % ((m.get("hora") or "")[11:16], quien.get(m.get("de"), "?")),
+                                 m.get("de"))
+                self.chat.insert("end", (m.get("texto") or "") + "\n")
+            if s.get("para_pem"):
+                self.chat.insert("end", "\n⚠ El técnico espera su respuesta (%d mensaje(s)).\n"
+                                 % len(s["para_pem"]), "pend")
+            if not s.get("chat"):
+                self.chat.insert("end", "Sin mensajes todavía.", "agente")
+        self.chat.see("end")
+        self.chat.config(state="disabled")
+
+    def _enviar_tecnico(self, tipo):
+        from . import central_cliente
+        s = self._caso()
+        texto = self.e_msg.get("1.0", "end").strip()
+        if not s:
+            self.lbl_envio.config(text="Seleccione la solicitud en la tabla.", fg=P.C["err"])
+            return
+        if not texto:
+            self.lbl_envio.config(text="Escriba el mensaje.", fg=P.C["err"])
+            return
+        if tipo == "direccionamiento" and not messagebox.askyesno(
+                "Direccionamiento final", "Se le enviará al técnico EXACTAMENTE este texto como direccionamiento "
+                "final de la solicitud %s:\n\n%s\n\n¿Enviar?" % (s["id"], texto)):
+            return
+        try:
+            r = central_cliente.enviar_mensaje(self.sv.ajustes, s["id"], texto, tipo)
+        except ConnectionError as e:
+            self.lbl_envio.config(text="No se envió: %s" % e, fg=P.C["err"])
+            return
+        self.e_msg.delete("1.0", "end")
+        self.lbl_envio.config(text="Enviado al técnico." if r.get("whatsapp") else
+                              "Registrado (el servidor no tiene WhatsApp configurado).", fg=P.C["ok"])
+        self.conexion.cambiar_disponible(self.disponible)      # latir ya para traer la conversacion
 
     def _alternar_disponible(self):
         self.disponible = not self.disponible
@@ -235,6 +321,10 @@ class PanelCola(tk.Frame):
             self.bell()
         elif est.get("plantillas"):
             self._aviso = ("Plantilla lista: %s · ya puede Procesar" % ", ".join(est["plantillas"]), _t.time())
+            self.bell()
+        elif est.get("preguntas"):
+            self._aviso = ("El técnico de la %s escribió: revise abajo y respóndale" % ", ".join(est["preguntas"]),
+                           _t.time())
             self.bell()
         aviso = getattr(self, "_aviso", None)
         if est.get("ok") and aviso and _t.time() - aviso[1] < 60:   # el aviso se queda 1 minuto a la vista
@@ -272,6 +362,7 @@ class PanelCola(tk.Frame):
         abiertas = [s for s in cola.solicitudes() if s["estado"] in cola.ABIERTOS]
         self.lbl.config(text="%d abierta(s)" % len(abiertas))
         self._auto_procesar()
+        self._pintar_chat()
         self._pintar_flujo()
         self.after(3000, self.refrescar)
 

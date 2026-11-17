@@ -60,6 +60,31 @@ Un PC (luego Azure) reparte las solicitudes y lee el correo; los PEM ya no abren
 
 Seguridad: cada PEM tiene su token (cifrado en su PC). En la red interna va por HTTP; en Azure irá por HTTPS.
 
+## Agente del técnico por WhatsApp (fase 3)
+El PEM no habla con el técnico: el agente le avisa cuando se asigna su solicitud, le responde el estado, le pasa
+**literal** lo que el PEM escriba (mensaje o direccionamiento final), le avisa el cierre y le pregunta si quedó en orden.
+Lo que no sabe responder se lo pasa al PEM (aviso en la Cola y recuadro "Técnico").
+
+**Barreras en código:** la IA (gpt-5-mini) solo clasifica la intención del mensaje; las respuestas son textos fijos con
+datos reales; IP y observaciones solo se reenvían tal como las escribió el PEM; cada técnico solo ve su caso (por el
+celular de la solicitud); a la IA solo le llega el texto del técnico. Sin IA, entiende por palabras clave.
+
+**Probar sin Meta (simulador):**
+1. `py -3 servidor_central.py --archivo items.json --demo --whatsapp-simulado` (o con SharePoint, sin `--archivo`)
+2. En otra ventana: `py -3 chat_tecnico.py --tel 3001234567` y escriba como si fuera el técnico.
+
+**WhatsApp real (Cloud API de Meta; no sirve la app WhatsApp Business):**
+1. developers.facebook.com → Crear app (tipo Empresa) → agregar **WhatsApp**. Meta da un número de prueba gratis
+   que puede escribir a hasta 5 celulares que usted verifique. La SIM nueva se agrega después como número real
+   (no debe estar registrada en ninguna app de WhatsApp).
+2. `py -3 servidor_central.py --configurar-whatsapp` (phone_number_id, token, verify token, clave secreta de la app,
+   plantilla de primer aviso: `hello_world` en pruebas, sin variable).
+3. URL pública HTTPS hacia el central: `ngrok http 8765` (en Azure no hace falta).
+4. En Meta → WhatsApp → Configuración → Webhook: URL `https://<ngrok>/whatsapp`, el mismo verify token; suscribir **messages**.
+
+**IA (gpt-5-mini en Foundry):** `py -3 servidor_central.py --configurar-ia` (endpoint y despliegue; API key opcional,
+si no se usa `az login`) y luego `py -3 servidor_central.py --probar-ia "me pasas la ip?"`.
+
 ## Pruebas
     python -m unittest discover -s tests -v
 Usan una carpeta temporal (`HAC_ZAC_DATOS`); no tocan datos reales.

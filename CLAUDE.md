@@ -19,6 +19,9 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
   - `cola.py` (cola.json con bloqueo entre procesos, estados `asignada/en_proceso/por_documentar/terminada`, pedidos de Est_Seg a SP), `servicio.py`, `plantilla.py`, `sesion.py` (latido de la ventana y `caso_entrante.json`), `forms_bot.py` (Playwright), `panel*.py`, `adaptable.py` (escala/DPI y scroll), `credenciales.py`, `log.py` (hac_zac.log rotativo).
 - `servidor_central.py` + `hac_zac/reparto.py` (lógica pura) + `hac_zac/central_cliente.py` (latido de la app del PEM cada 15 s):
   reparto central por HTTP con token por PEM; el central tiene la única sesión de SharePoint. Fase 1 del sistema central.
+- Fase 3: `hac_zac/agente.py` (lógica pura, barreras en código; la IA solo clasifica), `hac_zac/whatsapp.py` (Cloud API,
+  firma X-Hub-Signature-256, transporte Consola), `hac_zac/ia.py` (Azure OpenAI por REST; token de `az` o api key),
+  `chat_tecnico.py` (simulador). Rutas del central: /latido, /mensaje (PEM→técnico literal), /whatsapp (webhook).
 - `sp_lector.py`: lee la lista de SharePoint con Selenium y escribe estados (REST/ETag).
 - `correo_lector.py`: busca en Outlook web la cuenta RR, abre los correos y confirma el SOLICITUD ID exacto antes de guardar la plantilla. Refresca cada 60 s.
 - `portal_csr.py`: consulta del Support Portal por serial o MAC.
@@ -43,8 +46,10 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
 - Sin verificar en sistemas reales: selectores de Outlook, columnas de escritura en SharePoint, arranque de Chrome, descifrado DPAPI dentro de SecureCRT.
   Outlook: `py -3 correo_lector.py --una --debug` genera `outlook_debug_diagnostico.txt` (sin datos de clientes) y otros archivos de depuración.
 - Fases 1 (reparto central) y 2 (correo central: `hilo_correo` en servidor_central.py reutiliza `correo_lector.revisar` con
-  `pendientes`/`guardar` propios; el latido entrega `_correo`) hechas; falta probar con SharePoint/Outlook reales. Fase 3: agente WhatsApp (Cloud API de Meta, número de prueba).
+  `pendientes`/`guardar` propios; el latido entrega `_correo`) hechas; falta probar con SharePoint/Outlook reales. Fase 3 (agente WhatsApp) hecha en simulación; falta app de Meta + ngrok y la IA real.
 - Pendiente: Microsoft Graph para SharePoint/Outlook (requiere app en Entra ID por TI), partir el script de SecureCRT en módulos probables.
+
+- Azure CLI del PC está dañado (`No module named 'knack.cli'`): reinstalar o usar api_key en ia.json.
 
 ## Proyecto aparte: agente de técnicos (`agente_tecnicos.zip`, no está en este repositorio)
 Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de la solicitud en SharePoint (asignada, exitosa, no exitosa, escalamiento).
