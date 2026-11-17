@@ -227,8 +227,14 @@ TITULO_CASO_BRIDGE = "CTA-RR/{rr}/CONFIGURACIÓN MODO BRIDGE"
 
 
 # ----------------------------------------------------------------------------- utilidades
+_ESPACIOS_RAROS = dict.fromkeys(map(ord, "     　"), " ")
+_SIN_ANCHO = dict.fromkeys(map(ord, "​‌‍﻿"), None)
+
+
 def _norm(texto: str) -> str:
-    return (texto or "").replace("\r\n", "\n").replace("\r", "\n")
+    """Saltos de linea uniformes y sin espacios "duros" ni invisibles (Outlook web los usa en algunos correos)."""
+    t = (texto or "").replace("\r\n", "\n").replace("\r", "\n")
+    return t.translate(_ESPACIOS_RAROS).translate(_SIN_ANCHO)
 
 
 def render(plantilla: str, valores: dict) -> str:
@@ -260,8 +266,8 @@ def extraer_solicitud(texto: str) -> str:
     """Devuelve solo la solicitud: desde '++++SOLICITUD ID: n++++' hasta la linea 'FECHA SOLICITUD:'.
     Quita lo que rodea (encabezados del correo, 'DATOS DE CONFIGURACION', firmas, etc.).
     Si no encuentra el inicio, devuelve el texto tal cual (sin espacios sobrantes)."""
-    t = (texto or "").replace("\r\n", "\n").replace("\r", "\n")
-    ini = re.search(r"^[ \t]*\+*[ \t]*SOLICITUD ID:", t, re.M | re.I)
+    t = _norm(texto)
+    ini = re.search(r"^[ \t]*\+*[ \t]*SOLICITUD\s*ID\s*:", t, re.M | re.I)
     if not ini:
         return t.strip()
     t = t[ini.start():]
@@ -357,9 +363,10 @@ def parsear_solicitud(texto: str) -> dict:
     t = _norm(texto)
     bridge_txt = _buscar(t, r"REQUIERE IP BRIDGE\?[ \t]*(\S*)")
     return {
-        "solicitud_id": _buscar(t, r"SOLICITUD ID:[ \t]*(\d+)"),
+        # tolerante: "SOLICITUD ID: 64888", "SOLICITUD  ID :64888", o el numero en la linea/celda siguiente
+        "solicitud_id": _buscar(t, r"SOLICITUD\s*ID\s*:?\s*(\d{3,})"),
         "propiedad_red": _buscar(t, r"PROPIEDAD RED:[ \t]*(.*)").upper(),
-        "rr": _buscar(t, r"CUENTA RR:[ \t]*(\d+)"),
+        "rr": _buscar(t, r"CUENTA RR\s*:?\s*(\d+)"),
         "ot": _buscar(t, r"OT/LLs RR:[ \t]*(\S+)"),
         "cliente": _buscar(t, r"NOMBRE CLIENTE:[ \t]*(.*)"),
         "serial_ont": _buscar(t, r"SERIAL ONT:[ \t]*(.*)"),

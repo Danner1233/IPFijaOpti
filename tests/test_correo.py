@@ -138,5 +138,26 @@ class PruebasEstadoPorDocumentar(unittest.TestCase):
         self.assertIn("por_documentar", cola.ABIERTOS)
 
 
+class PruebasFormatosDeCorreo(unittest.TestCase):
+    """Outlook web a veces trae espacios "duros", el numero en otra linea/celda o caracteres invisibles."""
+
+    def test_variantes_del_id(self):
+        for t in ("++++++SOLICITUD ID: 64888++++++", "SOLICITUD ID:\n64888", "SOLICITUD ID:\t64888",
+                  "SOLICITUD ID : 64888", "SOLICITUD​ ID: 64888"):
+            self.assertEqual(correo_lector.id_del_correo(t), "64888", repr(t))
+
+    def test_correo_que_no_es_solicitud(self):
+        self.assertEqual(correo_lector.id_del_correo("RE: cuenta 3658787 favor revisar"), "")
+
+    def test_elige_el_correo_con_espacios_duros(self):
+        texto = correo("64888", "3658787.00000000").replace(" ", " ")
+        r = correo_lector.elegir_correo("64888", 1, lambda i: (texto, None), log=lambda m: None)
+        self.assertIsNotNone(r)
+
+    def test_recorta_la_plantilla_aunque_tenga_espacios_duros(self):
+        from hac_zac import plantilla
+        t = "De: X\nAsunto: Y\n\n" + correo("64888").replace(" ", " ") + " 2026\nFirma"
+        self.assertTrue(plantilla.extraer_solicitud(t).startswith("++++++SOLICITUD ID: 64888"))
+
 if __name__ == "__main__":
     unittest.main()
