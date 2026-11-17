@@ -17,6 +17,8 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
 - `SCRIPT_HAC_ZAC_UNIFICADO.py`: script de SecureCRT (py2.7). Recibe los datos por archivos JSON en la carpeta de datos.
 - `hac_zac_gui.py` + `hac_zac/`: interfaz (pestañas Operación, Cola, Historial, IP Capa 2, Admin, Ajustes) y núcleo.
   - `cola.py` (cola.json con bloqueo entre procesos, estados `asignada/en_proceso/por_documentar/terminada`, pedidos de Est_Seg a SP), `servicio.py`, `plantilla.py`, `sesion.py` (latido de la ventana y `caso_entrante.json`), `forms_bot.py` (Playwright), `panel*.py`, `adaptable.py` (escala/DPI y scroll), `credenciales.py`, `log.py` (hac_zac.log rotativo).
+- `servidor_central.py` + `hac_zac/reparto.py` (lógica pura) + `hac_zac/central_cliente.py` (latido de la app del PEM cada 15 s):
+  reparto central por HTTP con token por PEM; el central tiene la única sesión de SharePoint. Fase 1 del sistema central.
 - `sp_lector.py`: lee la lista de SharePoint con Selenium y escribe estados (REST/ETag).
 - `correo_lector.py`: busca en Outlook web la cuenta RR, abre los correos y confirma el SOLICITUD ID exacto antes de guardar la plantilla. Refresca cada 60 s.
 - `portal_csr.py`: consulta del Support Portal por serial o MAC.
@@ -40,6 +42,7 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
 - Ventana cortada al abrir: causa real en `adaptable.py` (Scrollable no se enteraba del contenido que crecía). Arreglado; falta confirmar en el PC.
 - Sin verificar en sistemas reales: selectores de Outlook, columnas de escritura en SharePoint, arranque de Chrome, descifrado DPAPI dentro de SecureCRT.
   Outlook: `py -3 correo_lector.py --una --debug` genera `outlook_debug_diagnostico.txt` (sin datos de clientes) y otros archivos de depuración.
+- Fase 1 (reparto central) hecha; falta probar con SharePoint real en simulación. Fase 2: lector de correo central; fase 3: agente WhatsApp (Cloud API de Meta, número de prueba).
 - Pendiente: Microsoft Graph para SharePoint/Outlook (requiere app en Entra ID por TI), partir el script de SecureCRT en módulos probables.
 
 ## Proyecto aparte: agente de técnicos (`agente_tecnicos.zip`, no está en este repositorio)

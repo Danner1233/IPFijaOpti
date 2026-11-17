@@ -13,7 +13,7 @@ from .rutas import data_dir
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import hac_zac_dpapi as dpapi  # noqa: E402
 
-CAMPOS = ("portal_usuario", "portal_clave", "crt_usuario", "crt_clave", "ms_usuario", "ms_clave")
+CAMPOS = ("portal_usuario", "portal_clave", "crt_usuario", "crt_clave", "ms_usuario", "ms_clave", "central_clave")
 CLAVES = tuple(k for k in CAMPOS if k.endswith("_clave"))
 _LOG = logging.getLogger("hac_zac.credenciales")
 

@@ -346,6 +346,29 @@ def registrar_mia(d, nombre):
     return True
 
 
+@bloqueado
+def registrar_desde_central(d, nombre):
+    """Caso que me asigno el servidor central. Queda en mi cola como 'asignada' y marcado origen=central
+    (su Est_Seg lo escribe el central, no mi lector de SharePoint). True si es nuevo."""
+    c = _cola()
+    for s in c["solicitudes"]:
+        if s["id"] == str(d["id"]):
+            if s.get("origen") != "central":
+                s["origen"] = "central"
+                _escribir("cola.json", c)
+            return False
+    datos = dict(d)
+    datos.setdefault("txt_sol", _texto_plantilla(datos))
+    c["solicitudes"].append({"id": str(d["id"]), "estado": "asignada", "asignado": nombre, "recibida": _ahora(),
+                             "asignada_en": _ahora(), "plantilla": False, "datos": datos, "origen": "central"})
+    _escribir("cola.json", c)
+    return True
+
+
+def es_del_central(id_):
+    return any(s["id"] == str(id_) and s.get("origen") == "central" for s in solicitudes())
+
+
 def rr_sin_correo():
     """Cuentas RR de mis solicitudes abiertas que todavia no tienen la plantilla del correo."""
     return {solo_digitos(s["datos"].get("rr")) for s in solicitudes()

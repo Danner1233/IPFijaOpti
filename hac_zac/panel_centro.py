@@ -131,17 +131,29 @@ class PanelCola(tk.Frame):
     def __init__(self, padre, servicio, procesar):
         super().__init__(padre, bg=P.C["bg"])
         self.sv, self.procesar = servicio, procesar
-        _titulo(self, "Mis solicitudes", "Los lectores traen las solicitudes que se le asignan a su nombre y copian "
-                "su plantilla del correo. Cuando una tiene plantilla, pulse Procesar: se abre SecureCRT y el script arranca solo.")
+        from . import central_cliente
+        self.central = central_cliente.configurado(servicio.ajustes)
+        if self.central:
+            _titulo(self, "Mis solicitudes", "El servidor central le asigna las solicitudes cuando está Disponible "
+                    "(no tiene que abrir SharePoint). El lector de correo copia la plantilla; cuando la tenga, pulse "
+                    "Procesar.")
+            self._tarjeta_central(central_cliente)
+        else:
+            _titulo(self, "Mis solicitudes", "Los lectores traen las solicitudes que se le asignan a su nombre y copian "
+                    "su plantilla del correo. Cuando una tiene plantilla, pulse Procesar: se abre SecureCRT y el script "
+                    "arranca solo.")
         self.auto = tk.BooleanVar(value=bool(servicio.ajustes.get("auto_asignar", True)))
-        self.b_flujo = P.BOTON(self, "▶  Iniciar flujo (SharePoint + correo)", self._flujo, True, 34)
+        self.b_flujo = P.BOTON(self, "▶  Iniciar flujo (correo)" if self.central else
+                               "▶  Iniciar flujo (SharePoint + correo)", self._flujo, True, 34)
         self.b_flujo.pack(anchor="w", pady=(0, 8))
-        self.serv = _Servicios(self, (("sp", "Lector de SharePoint", "sp_lector.py"),
-                                      ("correo", "Lector de correo", "correo_lector.py")), servicio, self._args)
-        tk.Checkbutton(self.serv.opciones, text="Asignarme solo una solicitud libre", variable=self.auto,
-                       command=self._guardar_auto,
-                       bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"], selectcolor=P.C["bg"],
-                       font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left", padx=(12, 0))
+        filas = ((("correo", "Lector de correo", "correo_lector.py"),) if self.central else
+                 (("sp", "Lector de SharePoint", "sp_lector.py"), ("correo", "Lector de correo", "correo_lector.py")))
+        self.serv = _Servicios(self, filas, servicio, self._args)
+        if not self.central:                       # con reparto central, asignar lo hace el servidor
+            tk.Checkbutton(self.serv.opciones, text="Asignarme solo una solicitud libre", variable=self.auto,
+                           command=self._guardar_auto,
+                           bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"], selectcolor=P.C["bg"],
+                           font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left", padx=(12, 0))
         self.auto_proc = tk.BooleanVar(value=bool(servicio.ajustes.get("auto_procesar", False)))
         tk.Checkbutton(self.serv.opciones, text="Procesar solo cuando llegue la plantilla", variable=self.auto_proc,
                        command=self._guardar_auto, bg=P.C["card"], fg=P.C["acc"], activebackground=P.C["card"],
@@ -173,6 +185,50 @@ class PanelCola(tk.Frame):
         self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w")
         self.lbl.pack(fill="x")
         self.refrescar()
+
+    # ---------------------------------------------------------------- reparto central
+    def _tarjeta_central(self, central_cliente):
+        card = tk.Frame(self, bg=P.C["card"], highlightbackground=P.C["line"], highlightcolor=P.C["line"],
+                        highlightthickness=1)
+        card.pack(fill="x", pady=(0, 10))
+        fila = P.ad.Flujo(card, P.C["card"], hueco=8)
+        fila.pack(fill="x", padx=18, pady=12)
+        self.luz_central = tk.Label(fila, text="●", bg=P.C["card"], fg=P.C["mut"], font=(P.FONT, 12))
+        self.luz_central.pack(side="left")
+        tk.Label(fila, text="Reparto central", bg=P.C["card"], fg=P.C["txt"],
+                 font=(P.FONT, 11, "bold")).pack(side="left", padx=(6, 14))
+        self.b_disp = tk.Label(fila, text="", font=(P.FONT, 10, "bold"), padx=14, pady=5, cursor="hand2")
+        self.b_disp.pack(side="left")
+        self.b_disp.bind("<Button-1>", lambda e: self._alternar_disponible())
+        self.lbl_central = tk.Label(fila, text="Conectando…", bg=P.C["card"], fg=P.C["mut"], font=(P.FONT, 10))
+        self.lbl_central.pack(side="left", padx=(14, 0))
+        self.disponible = False                     # al abrir siempre NO disponible: el PEM decide cuando empezar
+        self._pintar_disponible()
+        self.conexion = central_cliente.Conexion(self.sv.ajustes, lambda est: self.after(0, self._estado_central, est))
+        self.conexion.iniciar()
+
+    def _alternar_disponible(self):
+        self.disponible = not self.disponible
+        self.conexion.cambiar_disponible(self.disponible)
+        self._pintar_disponible()
+
+    def _pintar_disponible(self):
+        if self.disponible:
+            self.b_disp.config(text="● Disponible", bg=P.C["ok"], fg="#0d0d0c")
+        else:
+            self.b_disp.config(text="○ No disponible", bg=P.C["card2"], fg=P.C["txt"])
+
+    def _estado_central(self, est):
+        if not self.winfo_exists():
+            return
+        self.luz_central.config(fg=P.C["ok"] if est.get("ok") else P.C["err"])
+        msg = est.get("mensaje", "")
+        if est.get("simulacion"):
+            msg += "  (servidor en simulación: no asigna)"
+        if est.get("nuevos"):                       # la tabla se refresca sola cada 3 s
+            msg = "Nueva solicitud asignada: %s" % ", ".join(est["nuevos"])
+            self.bell()
+        self.lbl_central.config(text=msg, fg=P.C["txt"] if est.get("ok") else P.C["err"])
 
     def _args(self, clave):
         if clave == "correo":
@@ -218,7 +274,8 @@ class PanelCola(tk.Frame):
 
     def _pintar_flujo(self):
         vivo = self.serv.hay_vivos()
-        self.b_flujo.config(text="■  Detener flujo" if vivo else "▶  Iniciar flujo (SharePoint + correo)",
+        inicio = "▶  Iniciar flujo (correo)" if getattr(self, "central", False) else "▶  Iniciar flujo (SharePoint + correo)"
+        self.b_flujo.config(text="■  Detener flujo" if vivo else inicio,
                             bg=P.C["card2"] if vivo else P.C["acc"], fg=P.C["txt"] if vivo else P.C["on_acc"])
 
     def iniciar_al_abrir(self):
@@ -278,6 +335,8 @@ class PanelCola(tk.Frame):
 
     def detener_todo(self):
         self.serv.detener_todo()
+        if getattr(self, "conexion", None):
+            self.conexion.detener()
 
 
 # ======================================================================================= ADMIN

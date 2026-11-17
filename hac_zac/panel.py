@@ -890,6 +890,9 @@ class PanelAjustes(tk.Frame):
         self._padre_bloque = self.caja_avz
         self._bloque("Mi nombre en SharePoint", "Tal como aparece en PEM_ASIGNADO.", (("pem_nombre", "Nombre", False),))
         self._bloque("Ruta de SecureCRT", "SecureCRT.exe, para abrirlo solo desde la Cola.", (("securecrt_exe", "Ruta", False),))
+        self._bloque("Reparto central", "Dirección del servidor central (ej. http://PC-OFICINA:8765) y su token personal "
+                     "(se lo da el administrador). Con esto ya no usa SharePoint: reabra la aplicación al guardar.",
+                     (("servidor_central", "Dirección", False), ("central_clave", "Token", True)))
         self._padre_bloque = self
         self.auto = tk.BooleanVar(value=False)
         tk.Checkbutton(self.caja_avz, text="Asignarme una solicitud libre cuando no tenga ninguna", variable=self.auto,
@@ -1018,6 +1021,7 @@ class PanelAjustes(tk.Frame):
         aj = self.sv.ajustes if self.sv else {}
         datos["pem_nombre"] = aj.get("pem_nombre", "")
         datos["securecrt_exe"] = aj.get("securecrt_exe", "")
+        datos["servidor_central"] = aj.get("servidor_central", "")
         self.auto.set(bool(aj.get("auto_asignar", False)))
         self.sub.set(bool(aj.get("subcarpeta_dia", True)))
         self.avz.set(bool(aj.get("modo_avanzado", False)))
@@ -1041,6 +1045,7 @@ class PanelAjustes(tk.Frame):
                 self.sv.ajustes["subcarpeta_dia"] = bool(self.sub.get())
                 self.sv.ajustes["pem_nombre"] = self.campos["pem_nombre"].get().strip()
                 self.sv.ajustes["securecrt_exe"] = self.campos["securecrt_exe"].get().strip()
+                self.sv.ajustes["servidor_central"] = self.campos["servidor_central"].get().strip()
                 self.sv.ajustes["auto_asignar"] = bool(self.auto.get())
                 guardar_ajustes(self.sv.ajustes)
             self.lbl.config(text="Guardado", fg=C["ok"])

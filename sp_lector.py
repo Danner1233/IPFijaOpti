@@ -106,6 +106,8 @@ def enviar_estados_pendientes(driver):
     """Escribe en SharePoint el estado de las solicitudes ya documentadas. Devuelve cuantas escribio."""
     n = 0
     for id_, estado in cola.pendientes_sp().items():
+        if cola.es_del_central(id_):
+            continue                                  # su Est_Seg lo escribe el servidor central
         try:
             r = driver.execute_async_script(JS_ESTADO, BASE_ITEMS, RUTA_SITIO, id_, estado)
         except Exception as e:
