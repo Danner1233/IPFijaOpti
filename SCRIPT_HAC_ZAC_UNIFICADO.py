@@ -2245,6 +2245,15 @@ def _carpeta_script():
         return os.path.dirname(os.path.abspath(__file__))
 
 
+def resolver_python():
+    """Python 3 para la interfaz y el portal: el que trae el instalador (carpeta 'python' junto al script); si no
+    esta, el de PYTHON_EXE (por defecto 'python' del sistema)."""
+    incluido = os.path.join(_carpeta_script(), "python", "python.exe")
+    if PYTHON_EXE == "python" and os.path.isfile(incluido):
+        return incluido
+    return PYTHON_EXE
+
+
 def _descifrar(valor):
     """Las claves vienen cifradas con DPAPI ('dpapi:...'). Se intenta aqui (ctypes); si el Python de SecureCRT
     no trae ctypes, se le pide a Python 3 (PYTHON_EXE) que la descifre."""
@@ -2290,8 +2299,9 @@ def cargar_credenciales():
 
 
 def main():
-    global UI
+    global UI, PYTHON_EXE
 
+    PYTHON_EXE = resolver_python()
     cargar_credenciales()
 
     carpeta = tempfile.mkdtemp(prefix="hac_zac_")

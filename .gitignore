@@ -31,3 +31,4 @@ plantilla_base.txt
 *.pyc
 items_demo.json
 demoras/
+dist/

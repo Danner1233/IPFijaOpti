@@ -25,6 +25,9 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
 - `hac_zac/presencia.py` (en línea/ausente/desconectado por carpeta compartida de OneDrive, `carpeta_equipo`),
   `hac_zac/tiempos.py` (límite Claro 15 / neutras 30 min desde la asignación; justificación obligatoria al documentar:
   fotos o observación o "Demora por parte del PEM"; `DialogoDemora` en panel.py), pestaña Equipo (`PanelEquipo`).
+- Instalador: `armar_instalador.py` (zip con programa + copia del Python 3.15 local sin pip/pruebas) e
+  `instalar.py` (lo corre INSTALAR.bat; no pisa datos del usuario; detecta SecureCRT/sesión por IP del jump host).
+  `iniciar_hac_zac.py`/`INICIAR_HAC_ZAC.bat`: SecureCRT /S sesión /SCRIPT (con Portable llama al SecureCRT interno /F Data\Config).
 - `sp_lector.py`: lee la lista de SharePoint con Selenium y escribe estados (REST/ETag).
 - `correo_lector.py`: busca en Outlook web la cuenta RR, abre los correos y confirma el SOLICITUD ID exacto antes de guardar la plantilla. Refresca cada 60 s.
 - `portal_csr.py`: consulta del Support Portal por serial o MAC.

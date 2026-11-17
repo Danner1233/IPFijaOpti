@@ -98,6 +98,18 @@ Al pasarse sale la alerta "Superó el tiempo de gestión · baja productividad" 
 obligatorio justificar: **Claro** hasta 5 fotos (+ nota opcional), **neutras** una observación; en ambas
 existe "Demora por parte del PEM". Las fotos se copian a `<carpeta de datos>\demoras\<solicitud>\`.
 
+## Instalar en otros PC (un doble clic)
+**Armar el paquete (administrador, en su PC):**
+`py -3 armar_instalador.py --salida "<carpeta del equipo en OneDrive>\HAC_ZAC instalador"`
+Deja `INSTALAR.bat` + `HAC_ZAC.zip` (~76 MB: programa, Python con todo lo necesario y la base de Capa 2).
+
+**Cada PEM:** doble clic en `INSTALAR.bat`. Instala en `%LOCALAPPDATA%\HAC_ZAC` (fuera de OneDrive), busca SecureCRT y
+la sesión del jump host, deja configurada la carpeta del equipo (la del instalador), crea el acceso directo
+**HAC ZAC** en el escritorio y lo abre. La primera vez: en Ajustes, su nombre (como en SharePoint) y sus claves.
+
+**Actualizar a todos:** volver a armar el paquete y que cada uno ejecute `INSTALAR.bat` otra vez (con HAC ZAC
+cerrado). Se conservan ajustes, claves, cola, historial y fotos.
+
 ## Pruebas
     python -m unittest discover -s tests -v
 Usan una carpeta temporal (`HAC_ZAC_DATOS`); no tocan datos reales.
