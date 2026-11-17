@@ -314,7 +314,16 @@ def es_libre(it):
         return False
     if _plano(d.get("est_seg")) in ESTADOS_FINALES:
         return False
-    return _plano(it.get("ActivApoyo")) in ("", "no")
+    return not es_apoyo(it.get("ActivApoyo"))
+
+
+def es_apoyo(v):
+    """Columna 'Activ Apoyo': SharePoint puede mandarla como texto ('No'/'Si'), como Si/No (true/false) o vacia."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v != 0
+    return _plano(v) not in ("", "no", "false", "0", "none", "null")
 
 
 def elegir_libre(items):

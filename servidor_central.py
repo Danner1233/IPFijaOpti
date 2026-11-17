@@ -298,6 +298,33 @@ def hilo_correo(central, ver=False, cada=60, debug=False, parar=None):
         d.quit()
 
 
+def cola_es_libre(it):
+    from hac_zac import cola
+    return cola.es_libre(it)
+
+
+def guardar_diagnostico_sp(carpeta, items):
+    """sp_ultimo.json: lo ultimo que se leyo de SharePoint y por que cada solicitud es (o no) libre.
+    Queda solo en este PC (carpeta del central). Sirve para ajustar columnas sin abrir la ventana del central."""
+    from hac_zac import cola
+    filas = []
+    for it in items[:30]:
+        d = cola.desde_sp(it)
+        motivo = ("libre" if cola.es_libre(it) else
+                  "tiene PEM" if str(d.get("pem") or "").strip() else
+                  "estado final" if cola._plano(d.get("est_seg")) in cola.ESTADOS_FINALES else
+                  "marcada como apoyo")
+        filas.append({"ID": it.get("ID"), "Created": it.get("Created"), "PEM_ASIGNADO": it.get("PEM_ASIGNADO"),
+                      "Est_Seg": it.get("Est_Seg"), "ActivApoyo": it.get("ActivApoyo"), "motivo": motivo})
+    datos = {"hora": datetime.now().isoformat(timespec="seconds"), "leidas": len(items),
+             "columnas": sorted(items[0].keys()) if items else [], "solicitudes": filas}
+    try:
+        with open(os.path.join(carpeta, "sp_ultimo.json"), "w", encoding="utf-8") as f:
+            json.dump(datos, f, ensure_ascii=False, indent=1, default=str)
+    except OSError:
+        pass
+
+
 def ya_hay_central(puerto=PUERTO, timeout=2):
     """True si en este PC ya responde un servidor central en ese puerto (no se debe abrir otro)."""
     import urllib.request
@@ -583,8 +610,10 @@ def main():
                 if not central.simular and sp_lector.enviar_estados_pendientes(d):
                     time.sleep(1)
                 items = sp_lector.leer_items(d)
+                guardar_diagnostico_sp(carpeta, items)
                 central.repartir(items, lambda it, n: bool(sp_lector.asignar_item(d, it, n)))
-                print(time.strftime("%H:%M:%S"), "leidas %d solicitudes" % len(items), flush=True)
+                print(time.strftime("%H:%M:%S"), "leidas %d solicitudes, %d libres" % (
+                    len(items), sum(1 for it in items if cola_es_libre(it))), flush=True)
                 print("\n".join(central.tabla()), flush=True)
             except Exception as e:
                 print(time.strftime("%H:%M:%S"), "error:", e, flush=True)
