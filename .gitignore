@@ -1,0 +1,26 @@
+# Diagnostico de Outlook: puede traer datos de clientes
+outlook_debug_*
+__pycache__/
+hac_zac.log*
+# Datos de trabajo y credenciales: nunca al repositorio
+historial_capa2.json
+credenciales.json
+ajustes.json
+cola.json
+solicitud*.json
+correos_vistos.txt
+sp_debug.json
+*.tmp
+gui_activa.json
+estado.json
+respuesta.json
+cancelar.flag
+ingenieros.json
+caso_pendiente.json
+caso_entrante.json
+sp_pendientes.json
+historial_documentacion.json
+documentacion.json
+auth_numero.json
+plantilla_caso_bridge.txt
+registro_sharepoint.jsonl

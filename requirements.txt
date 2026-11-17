@@ -1,0 +1,4 @@
+# Versiones probadas en el PC de trabajo (Python 3.15). "~=" deja pasar solo arreglos menores (ej. 4.52.1),
+# no cambios que puedan romper. Para subir de version: probar primero y luego cambiar aqui.
+selenium~=4.52.0
+playwright~=1.64.0
