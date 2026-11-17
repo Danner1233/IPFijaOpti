@@ -682,9 +682,9 @@ class PanelPlantilla(tk.Frame):
 # ======================================================================================= HISTORIAL
 class PanelHistorial(tk.Frame):
     COLS = ("Solicitud", "Cuenta RR", "Cliente", "Red", "Capa 2", "Estado", "Avance",
-            "Documentación", "Actualizada")
+            "Plantilla", "Documentación", "Actualizada")
     FILTROS_ESTADO = ("Todos los estados",) + tuple(ESTADOS)
-    FILTROS = ("Todas", "No documentadas", "Documentadas")
+    FILTROS = ("Todas", "No documentadas", "Documentadas", "Sin guardar")
 
     def __init__(self, padre, servicio, abrir):
         super().__init__(padre, bg=C["bg"])
@@ -714,7 +714,7 @@ class PanelHistorial(tk.Frame):
             ("Marcar documentada / pendiente", self._alternar), ("Cambiar estado…", self._menu_estado),
             ("Ver IPs libres", self._ips_libres), None, ("Eliminar", self._eliminar)]), False, 8)
         self.b_estado.pack(side="left")
-        m, self.t = _tabla(self, self.COLS, (70, 85, 160, 62, 110, 100, 120, 140, 100), alto=14)
+        m, self.t = _tabla(self, self.COLS, (70, 85, 160, 62, 110, 100, 120, 105, 140, 100), alto=14)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("doc", foreground=C["mut"])
         self.t.tag_configure("pend", foreground=C["txt"])
@@ -728,6 +728,11 @@ class PanelHistorial(tk.Frame):
         d = r.get("documentada_en") or ""
         return ("✓ Documentada " + d[5:16].replace("T", " ")) if d else "○ No documentada"
 
+    @staticmethod
+    def _guardada_texto(r):
+        g = r.get("guardada")
+        return "—" if g is None else ("✓ Guardada" if g else "○ Sin guardar")
+
     def refrescar(self):
         sel = self._clave()
         f = self.cb_f.get()
@@ -736,6 +741,8 @@ class PanelHistorial(tk.Frame):
             regs = [r for r in regs if not r.get("documentada_en")]
         elif f == "Documentadas":
             regs = [r for r in regs if r.get("documentada_en")]
+        elif f == "Sin guardar":
+            regs = [r for r in regs if r.get("guardada") is False]
         fe = self.cb_e.get()
         if fe in ESTADOS:
             regs = [r for r in regs if estados.normalizar(r.get("resultado")) == fe]
@@ -745,12 +752,14 @@ class PanelHistorial(tk.Frame):
         for r in self.regs:
             self.t.insert("", "end", iid=r["key"], tags=("doc" if r.get("documentada_en") else "pend",), values=(
                 r.get("id") or "—", r.get("rr"), r.get("cliente"), r.get("red"), r.get("capa2"),
-                estados.normalizar(r.get("resultado")) or "—", r.get("estado"), self._doc_texto(r),
-                (r.get("actualizada") or "")[5:16].replace("T", " ")))
+                estados.normalizar(r.get("resultado")) or "—", r.get("estado"), self._guardada_texto(r),
+                self._doc_texto(r), (r.get("actualizada") or "")[5:16].replace("T", " ")))
         if sel and self.t.exists(sel):
             self.t.selection_set(sel)
         pend = sum(1 for r in self.regs if not r.get("documentada_en"))
-        self.lbl.config(text="%d solicitud(es) · %d sin documentar" % (len(self.regs), pend))
+        sin_guardar = sum(1 for r in self.regs if r.get("guardada") is False)
+        self.lbl.config(text="%d solicitud(es) · %d sin documentar · %d sin guardar" % (len(self.regs), pend,
+                                                                                         sin_guardar))
 
     def _clave(self):
         sel = self.t.selection()

@@ -16,6 +16,16 @@ from typing import List, Optional
 from .rutas import data_dir
 
 
+def plantilla_guardada(d: dict) -> Optional[bool]:
+    """True si la plantilla de la solicitud esta en su .txt tal como se ve; False si no; None si aun no hay
+    plantilla (nada que guardar)."""
+    texto = d.get("preview") or ""
+    if not str(texto).strip():
+        return None
+    from .plantilla import esta_guardada
+    return esta_guardada(texto, d.get("archivo"))
+
+
 class SolicitudStore:
     def __init__(self, carpeta=None):
         self.carpeta = Path(carpeta) if carpeta else data_dir() / "solicitudes"
@@ -77,5 +87,6 @@ class SolicitudStore:
             from .estados import normalizar
             resumen["resultado"] = normalizar(resumen["resultado"])
             resumen["intentos"] = d.get("intentos") or []
+            resumen["guardada"] = plantilla_guardada(d)
             out.append(resumen)
         return sorted(out, key=lambda r: r.get("actualizada", ""), reverse=True)
