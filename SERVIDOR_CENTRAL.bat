@@ -14,6 +14,9 @@ echo   3. Ver los PEM registrados
 echo   4. Agregar un PEM (muestra su token)
 echo   5. Token nuevo para un PEM
 echo   6. Simulacion sin SharePoint + WhatsApp simulado (pruebas)
+echo   7. Configurar IA (gpt-5-mini en Azure)
+echo   8. Probar la IA
+echo   9. Configurar WhatsApp (Meta)
 echo   0. Salir
 echo.
 set /p op=Elija una opcion y pulse Enter:
@@ -23,6 +26,9 @@ if "%op%"=="3" goto lista
 if "%op%"=="4" goto agregar
 if "%op%"=="5" goto token
 if "%op%"=="6" goto demo
+if "%op%"=="7" goto ia
+if "%op%"=="8" goto probaria
+if "%op%"=="9" goto whatsapp
 if "%op%"=="0" exit /b
 goto menu
 
@@ -58,6 +64,27 @@ set /p nom=Nombre del PEM:
 py -3 servidor_central.py --token "%nom%"
 echo.
 echo Copie el token (seleccione con el mouse y pulse Enter) y peguelo en la app: Ajustes ^> Reparto central.
+pause
+goto menu
+
+:ia
+echo.
+echo Datos en el portal de Azure: su recurso de Foundry ^> "Claves y punto de conexion".
+echo La clave no se ve al escribirla (se guarda cifrada en este PC).
+py -3 servidor_central.py --configurar-ia
+echo.
+echo Si el central esta abierto, cierrelo (Ctrl+C) y abralo de nuevo para que use la IA.
+pause
+goto menu
+
+:probaria
+set /p frase=Escriba un mensaje como si fuera el tecnico:
+py -3 servidor_central.py --probar-ia "%frase%"
+pause
+goto menu
+
+:whatsapp
+py -3 servidor_central.py --configurar-whatsapp
 pause
 goto menu
 
