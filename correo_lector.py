@@ -296,6 +296,7 @@ def revisar(driver, debug=False, pendientes=None, guardar=None):
                 f.write("\n\n".join(i.get_attribute("outerHTML") for i in _resultados(driver)[:5]))
         if not n:
             print("   cuenta %s: Outlook no muestra correos todavia" % rr)
+            _LOG.info("cuenta %s (solicitud %s): la busqueda no dio correos", rr, sol["id"])
             if debug:
                 _volcar_diagnostico(driver, "la busqueda de la cuenta %s no dio filas" % rr)
             continue
@@ -319,15 +320,17 @@ def revisar(driver, debug=False, pendientes=None, guardar=None):
                 _LOG.warning("no pude abrir el resultado %s de la cuenta %s: %s", i, rr, e)
                 return "", None
 
-        hallado = elegir_correo(sol["id"], n, leer)
+        hallado = elegir_correo(sol["id"], n, leer, log=lambda m: (print(m), _LOG.info(m.strip())))
         if not hallado:
             print("   cuenta %s: aun no llega el correo de la solicitud %s" % (rr, sol["id"]))
+            _LOG.info("cuenta %s (solicitud %s): %d correo(s) abiertos, ninguno con ese SOLICITUD ID", rr, sol["id"], n)
             continue
         texto, hora = hallado
         r = guardar(texto, hora, sol)
         if r:
             nuevos += 1
             print("   plantilla guardada para la solicitud", r, "- lista para el script")
+            _LOG.info("cuenta %s: plantilla guardada para la solicitud %s", rr, r)
     return nuevos
 
 
