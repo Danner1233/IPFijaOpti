@@ -24,3 +24,8 @@ documentacion.json
 auth_numero.json
 plantilla_caso_bridge.txt
 registro_sharepoint.jsonl
+browser_profile/
+solicitudes/
+plantilla_base.txt
+*.bak
+*.pyc
