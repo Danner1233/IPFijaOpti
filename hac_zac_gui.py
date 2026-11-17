@@ -176,6 +176,7 @@ class App(tk.Tk):
         self.v_cola = panel_centro.PanelCola(self.cont, self.sv, self._procesar_caso)
         self.v_cola.ocupado = lambda: self.corriendo
         self.v_admin = panel_centro.PanelAdmin(self.cont, self.sv)
+        self.v_equipo = panel_centro.PanelEquipo(self.cont, self.sv)
         self.vista_op = self.v_form
         self._mostrar(self.v_cola if centro else self.v_form)
         if centro or not demo:
@@ -185,6 +186,12 @@ class App(tk.Tk):
             self._latir()                                          # avisa que esta ventana esta viva y recibe casos
 
         self.protocol("WM_DELETE_WINDOW", self._cerrar)
+        # Presencia del equipo: cada clic, tecla o rueda en la app cuenta como "en linea" (5 min sin uso = ausente).
+        self._ultima_actividad = datetime.now()
+        for ev in ("<KeyPress>", "<ButtonPress>", "<MouseWheel>"):
+            self.bind_all(ev, self._actividad, add="+")
+        if not demo:
+            self.after(5000, self._publicar_presencia)
         # Al abrir, Windows aun no ha dado su tamano final a la ventana cuando se calcula el diseno: sin esto
         # hay que maximizar y restaurar para ver todo. Se fuerza un recalculo cuando la ventana ya esta mostrada.
         self.bind("<Map>", self._al_mostrar, add="+")
@@ -192,6 +199,26 @@ class App(tk.Tk):
             self.after(ms, self._relayout)
         self.after(250, self._poll)
         self.after(40, self._animar)
+
+    # ---------- presencia del equipo ----------
+    def _actividad(self, e=None):
+        self._ultima_actividad = datetime.now()
+
+    def _publicar_presencia(self):
+        """Cada 60 s deja mi estado en la carpeta compartida (en un hilo: OneDrive puede tardar)."""
+        carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+        nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
+        if carpeta and nombre:
+            from hac_zac import presencia
+
+            def trabajo(ultima=self._ultima_actividad, ocupado=bool(self.corriendo)):
+                try:
+                    presencia.publicar(carpeta, nombre, ultima, ocupado)
+                except Exception:
+                    from hac_zac import log
+                    log.obtener("presencia").warning("no se pudo publicar en %s", carpeta, exc_info=True)
+            threading.Thread(target=trabajo, daemon=True).start()
+        self.after(60000, self._publicar_presencia)
 
     # ---------- base ----------
     def _al_mostrar(self, e=None):
@@ -257,7 +284,7 @@ class App(tk.Tk):
         h2.pack(fill="x", padx=26, pady=(0, 8))
         self.tabs = {}
         self._h2 = h2
-        for nombre in ("Operación", "Cola", "Historial", "IP Capa 2", "Admin", "Ajustes"):
+        for nombre in ("Operación", "Cola", "Historial", "Equipo", "IP Capa 2", "Admin", "Ajustes"):
             t = tk.Label(h2, text=nombre, bg=C["bg"], fg=C["mut"], font=(FONT, 11, "bold"),
                          padx=10, pady=2, cursor="hand2")
             t.bind("<Button-1>", lambda e, n=nombre: self._tab(n))
@@ -322,7 +349,7 @@ class App(tk.Tk):
     def _pestanas(self):
         """Modo sencillo: Operación, Cola, Historial y Ajustes. Modo avanzado: agrega IP Capa 2 y Admin."""
         avz = self.centro or bool(self.sv.ajustes.get("modo_avanzado", False))
-        sencillas = ("Operación", "Cola", "Historial", "Ajustes")
+        sencillas = ("Operación", "Cola", "Historial", "Equipo", "Ajustes")
         for n, t in self.tabs.items():
             t.pack_forget()
             t.grid_forget()
@@ -370,7 +397,8 @@ class App(tk.Tk):
         return b
 
     def _mostrar(self, vista):
-        for v in (self.v_form, self.v_run, self.v_res, self.v_hist, self.v_ips, self.v_aj, self.v_cola, self.v_admin):
+        for v in (self.v_form, self.v_run, self.v_res, self.v_hist, self.v_ips, self.v_aj, self.v_cola, self.v_admin,
+                  self.v_equipo):
             v.pack_forget()
         vista.pack(fill="both", expand=True)
         self.after_idle(self._relayout)
@@ -379,7 +407,7 @@ class App(tk.Tk):
             activa = "Operación"
         else:
             activa = {id(self.v_hist): "Historial", id(self.v_aj): "Ajustes", id(self.v_cola): "Cola",
-                      id(self.v_admin): "Admin"}.get(id(vista), "IP Capa 2")
+                      id(self.v_admin): "Admin", id(self.v_equipo): "Equipo"}.get(id(vista), "IP Capa 2")
         for n, t in self.tabs.items():
             t.config(fg=C["acc"] if n == activa else C["mut"])
 
@@ -398,6 +426,9 @@ class App(tk.Tk):
         elif nombre == "Admin":
             self.v_admin.refrescar()
             self._mostrar(self.v_admin)
+        elif nombre == "Equipo":
+            self.v_equipo.refrescar()
+            self._mostrar(self.v_equipo)
         else:
             self.v_ips.refrescar()
             self._mostrar(self.v_ips)

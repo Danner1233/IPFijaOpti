@@ -126,7 +126,7 @@ def _titulo(padre, texto, ayuda):
 
 # ======================================================================================= COLA
 class PanelCola(tk.Frame):
-    COLS = ("Solicitud", "Cuenta RR", "Cliente", "Estado", "Plantilla", "SharePoint", "Correo", "Demora")
+    COLS = ("Solicitud", "Cuenta RR", "Cliente", "Estado", "Plantilla", "SharePoint", "Correo", "Demora", "Tiempo")
 
     def __init__(self, padre, servicio, procesar):
         super().__init__(padre, bg=P.C["bg"])
@@ -180,8 +180,9 @@ class PanelCola(tk.Frame):
         P.BOTON(b, "Procesar", self._procesar, True, 11).pack(side="left")
         P.BOTON(b, "Marcar terminada", self._terminar, False, 16).pack(side="left", padx=6)
         P.BOTON(b, "Quitar de la cola", self._quitar, False, 15).pack(side="left")
-        m, self.t = P._tabla(self, self.COLS, (80, 95, 200, 95, 75, 120, 120, 80), alto=7)
+        m, self.t = P._tabla(self, self.COLS, (80, 95, 200, 95, 75, 120, 120, 80, 95), alto=7)
         m.pack(fill="both", expand=True, pady=8)
+        self.t.tag_configure("excedida", foreground=P.C["err"])
         self.t.bind("<Double-1>", lambda e: self._procesar())
         self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w")
         self.lbl.pack(fill="x")
@@ -344,27 +345,50 @@ class PanelCola(tk.Frame):
     def _hora(iso):
         return (iso or "")[11:19] if iso and "T" in iso else (iso or "—")
 
+    def _tiempo(self, s):
+        """Tiempo de gestion desde la asignacion (en vivo si sigue abierta; final si ya se documento)."""
+        from . import tiempos
+        rec = self.sv.store.cargar(s["id"]) or {}
+        base = dict(rec, txt_sol=rec.get("txt_sol") or s["datos"].get("txt_sol", ""),
+                    propiedad_red=s["datos"].get("propiedad_red", ""))
+        if s["estado"] not in cola.ABIERTOS and not rec.get("documentada_en"):
+            return "—", False
+        m = tiempos.medir(base, s)
+        return tiempos.texto(m), m["excedido"] and not rec.get("documentada_en")
+
     def refrescar(self):
         if not self.winfo_exists():
             return
+        if getattr(self, "_tarea", None):            # una sola actualizacion programada (antes se acumulaban)
+            try:
+                self.after_cancel(self._tarea)
+            except Exception:
+                pass
         sel = self.t.selection()
         for i in self.t.get_children():
             self.t.delete(i)
+        excedidas = []
         for s in reversed(cola.solicitudes()):
             d = s["datos"]
             dem = s.get("demora_correo_s")
-            self.t.insert("", "end", iid=s["id"], values=(
+            t_txt, excedida = self._tiempo(s)
+            if excedida:
+                excedidas.append(s["id"])
+            self.t.insert("", "end", iid=s["id"], tags=("excedida",) if excedida else (), values=(
                 s["id"], d.get("rr", ""), d.get("cliente", ""), s["estado"].replace("_", " "),
                 "✓" if s.get("plantilla") else "—", self._hora(d.get("creada") or s.get("recibida")),
-                self._hora(s.get("correo_en")), ("%d:%02d" % divmod(dem, 60)) if dem is not None else "—"))
+                self._hora(s.get("correo_en")), ("%d:%02d" % divmod(dem, 60)) if dem is not None else "—", t_txt))
         if sel and self.t.exists(sel[0]):
             self.t.selection_set(sel[0])
         abiertas = [s for s in cola.solicitudes() if s["estado"] in cola.ABIERTOS]
-        self.lbl.config(text="%d abierta(s)" % len(abiertas))
+        from . import tiempos
+        self.lbl.config(text="%d abierta(s)" % len(abiertas) + (
+            "  ·  ⚠ %s: %s" % (tiempos.ALERTA, ", ".join(excedidas)) if excedidas else ""),
+            fg=P.C["err"] if excedidas else P.C["mut"])
         self._auto_procesar()
         self._pintar_chat()
         self._pintar_flujo()
-        self.after(3000, self.refrescar)
+        self._tarea = self.after(3000, self.refrescar)
 
     def _flujo(self):
         """Un solo boton: abre/cierra el lector de SharePoint y el de correo a la vez."""
@@ -441,6 +465,59 @@ class PanelCola(tk.Frame):
         self.serv.detener_todo()
         if getattr(self, "conexion", None):
             self.conexion.detener()
+
+
+# ======================================================================================= EQUIPO
+class PanelEquipo(tk.Frame):
+    """Quien esta en linea, ausente o desconectado (carpeta compartida del equipo en OneDrive)."""
+    COLS = ("PEM", "Estado", "Último uso", "En línea hoy")
+
+    def __init__(self, padre, servicio):
+        super().__init__(padre, bg=P.C["bg"])
+        self.sv = servicio
+        _titulo(self, "Equipo", "Quién está usando el optimizador. En línea: usó la aplicación en los últimos 5 "
+                "minutos o tiene un proceso corriendo. Ausente: la tiene abierta pero lleva 5 minutos sin usarla. "
+                "Desconectado: cerró la aplicación o su PC no sincroniza.")
+        m, self.t = P._tabla(self, self.COLS, (260, 150, 160, 130), alto=10)
+        m.pack(fill="both", expand=True, pady=8)
+        self.t.tag_configure("en_linea", foreground=P.C["ok"])
+        self.t.tag_configure("ausente", foreground=P.C["warn"])
+        self.t.tag_configure("desconectado", foreground=P.C["mut"])
+        self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w",
+                            justify="left")
+        self.lbl.pack(fill="x")
+        P.ad.envolver(self.lbl)
+        self._tarea = None
+        self.refrescar()
+
+    def refrescar(self):
+        from . import presencia
+        if not self.winfo_exists():
+            return
+        if self._tarea:
+            try:
+                self.after_cancel(self._tarea)
+            except Exception:
+                pass
+        carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+        for i in self.t.get_children():
+            self.t.delete(i)
+        if not carpeta:
+            self.lbl.config(text="Configure la carpeta compartida del equipo en Ajustes (una carpeta de OneDrive o "
+                                 "SharePoint que todos los PEM tengan sincronizada).", fg=P.C["warn"])
+        else:
+            filas = presencia.equipo(carpeta)
+            for f in filas:
+                self.t.insert("", "end", tags=(f["estado"],), values=(
+                    f["nombre"], presencia.ETIQUETA.get(f["estado"], f["estado"]),
+                    presencia.hace(f["ultima_actividad"]),
+                    ("%d h %02d min" % divmod(f["en_linea_hoy_min"], 60)) if f["en_linea_hoy_min"] else "—"))
+            n = sum(1 for f in filas if f["estado"] == "en_linea")
+            self.lbl.config(text="%d en línea · %d ausente(s) · %d desconectado(s) · se actualiza cada 30 s" % (
+                n, sum(1 for f in filas if f["estado"] == "ausente"),
+                sum(1 for f in filas if f["estado"] == "desconectado")) if filas else
+                "Nadie ha publicado su estado todavía en esa carpeta.", fg=P.C["mut"])
+        self._tarea = self.after(30000, self.refrescar)
 
 
 # ======================================================================================= ADMIN

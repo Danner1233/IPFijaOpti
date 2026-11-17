@@ -26,6 +26,21 @@ def plantilla_guardada(d: dict) -> Optional[bool]:
     return esta_guardada(texto, d.get("archivo"))
 
 
+def _tiempo_resumen(d: dict, sol_cola: Optional[dict]) -> dict:
+    """Tiempo de gestion para el historial: '18/15 min ⚠ · fotos', 'excedido' y el tipo de justificacion."""
+    from . import tiempos
+    try:
+        m = tiempos.medir(d, sol_cola)
+    except Exception:
+        return {"tiempo": "—", "excedido": False, "demora_tipo": ""}
+    j = d.get("demora") or {}
+    tipos = {"fotos": "fotos", "observacion": "observación", "pem": "demora PEM"}
+    txt = tiempos.texto(m)
+    if m["excedido"] and j.get("tipo"):
+        txt += " · " + tipos.get(j["tipo"], j["tipo"])
+    return {"tiempo": txt, "excedido": m["excedido"], "demora_tipo": j.get("tipo", "")}
+
+
 class SolicitudStore:
     def __init__(self, carpeta=None):
         self.carpeta = Path(carpeta) if carpeta else data_dir() / "solicitudes"
@@ -75,6 +90,11 @@ class SolicitudStore:
     def listar(self) -> List[dict]:
         """Resumen de cada solicitud, la más reciente primero."""
         out = []
+        try:
+            from . import cola
+            asignadas = {s["id"]: s for s in cola.solicitudes()}
+        except Exception:
+            asignadas = {}
         for f in self.carpeta.glob("*.json"):
             try:
                 d = json.loads(f.read_text(encoding="utf-8"))
@@ -88,5 +108,6 @@ class SolicitudStore:
             resumen["resultado"] = normalizar(resumen["resultado"])
             resumen["intentos"] = d.get("intentos") or []
             resumen["guardada"] = plantilla_guardada(d)
+            resumen.update(_tiempo_resumen(d, asignadas.get(str(d.get("id") or ""))))
             out.append(resumen)
         return sorted(out, key=lambda r: r.get("actualizada", ""), reverse=True)

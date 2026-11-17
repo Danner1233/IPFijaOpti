@@ -30,3 +30,4 @@ plantilla_base.txt
 *.bak
 *.pyc
 items_demo.json
+demoras/

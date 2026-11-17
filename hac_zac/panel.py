@@ -215,6 +215,10 @@ class PanelPlantilla(tk.Frame):
         cab.pack(fill="x", pady=(2, 6))
         self.banner = tk.Label(cab, text="", bg=C["bg"], fg=C["ok"], font=(SERIF, 16, "bold"), anchor="w")
         self.banner.pack(side="left")
+        self.lbl_tiempo = tk.Label(cab, text="", bg=C["bg"], fg=C["mut"], font=(FONT, 10, "bold"), anchor="w")
+        self.lbl_tiempo.pack(side="left", padx=(14, 0))
+        self._alertadas = set()                 # solicitudes que ya mostraron la alerta de tiempo
+        self.after(1000, self._tick_tiempo)
         self.pill = tk.Label(cab, text="", bg=C["card2"], fg=C["mut"], font=(FONT, 9, "bold"), padx=8, pady=3,
                              cursor="hand2")
         self.pill.pack(side="right")
@@ -377,6 +381,63 @@ class PanelPlantilla(tk.Frame):
                             ("Archivo: %s" % rec["archivo"] if rec.get("archivo") else
                              "Elija la IP asignada (y la IP bridge si aplica); la plantilla se actualiza sola."))
         self._cargando = False
+
+    # ---------------------------------------------------------------- tiempo de gestion
+    def _sol_cola(self):
+        from . import cola
+        i = str((self.rec or {}).get("id") or "")
+        return next((s for s in cola.solicitudes() if s["id"] == i), None) if i else None
+
+    def medir_tiempo(self):
+        from . import tiempos
+        return tiempos.medir(self.rec or {}, self._sol_cola())
+
+    def _tick_tiempo(self):
+        """Cada 30 s: ⏱ 12/15 min. Al pasarse del limite (y sin documentar) alerta UNA vez por solicitud."""
+        from . import tiempos
+        if not self.winfo_exists():
+            return
+        try:
+            if self.rec:
+                m = self.medir_tiempo()
+                doc = bool(self.rec.get("documentada_en"))
+                color = C["err"] if m["excedido"] else (C["warn"] if m["minutos"] > m["limite"] * 0.8 else C["ok"])
+                self.lbl_tiempo.config(text="⏱ %s  · red %s%s" % (tiempos.texto(m), m["red"],
+                                                                   "  · documentada" if doc else ""),
+                                       fg=C["mut"] if doc else color)
+                key = self.rec.get("key")
+                if m["excedido"] and not doc and key not in self._alertadas and self.winfo_ismapped():
+                    self._alertadas.add(key)
+                    self.bell()
+                    messagebox.showwarning(
+                        "Tiempo de gestión", "%s\n\nSolicitud %s · red %s · %d min (límite %d min).\n\n"
+                        "Al documentar se le pedirá %s." % (
+                            tiempos.ALERTA, self.rec.get("id") or key, m["red"], int(m["minutos"]), m["limite"],
+                            "la observación de la demora" if tiempos.es_neutra(m["red"]) else
+                            "evidencia (hasta %d fotos) que explique la demora" % tiempos.MAX_FOTOS))
+            else:
+                self.lbl_tiempo.config(text="")
+        except Exception:
+            pass
+        self.after(30000, self._tick_tiempo)
+
+    def _justificar_si_hace_falta(self):
+        """Antes de documentar: si se paso del tiempo y no hay justificacion valida, la pide (obligatoria).
+        Devuelve False si el usuario cancela."""
+        from . import tiempos
+        m = self.medir_tiempo()
+        sol = self._sol_cola()
+        extra = {}
+        if sol and sol.get("asignada_en") and not self.rec.get("asignada_en"):
+            extra["asignada_en"] = sol["asignada_en"]          # el tiempo no depende de que siga en la cola
+        if m["excedido"] and not tiempos.justificacion_valida(m["red"], self.rec.get("demora"))[0]:
+            j = DialogoDemora(self, self.rec, m).resultado
+            if not j:
+                return False
+            extra["demora"] = j
+        if extra:
+            self.rec = self.sv.actualizar(self.rec["key"], **extra) or self.rec
+        return True
 
     def abrir_ips(self):
         """Abre el recuadro de IP libres (o lo trae al frente si ya está abierto)."""
@@ -634,6 +695,8 @@ class PanelPlantilla(tk.Frame):
                                    "solicitud, regional, actividad, IP asignada…) y vuelva a pulsar Documentar." %
                                    ", ".join(doc.ETIQUETAS.get(k, k) for k in faltan))
             return
+        if not self._justificar_si_hace_falta():
+            return
         det = "\n".join("%s: %s" % kv for kv in doc.resumen(d))
         sp = self.sv.estado_sp_de(self.sv.store.cargar(self.rec["key"]) or self.rec)
         if sp:
@@ -680,11 +743,131 @@ class PanelPlantilla(tk.Frame):
 
 
 # ======================================================================================= HISTORIAL
+class DialogoDemora(tk.Toplevel):
+    """Justificacion OBLIGATORIA cuando una solicitud supero el tiempo de gestion.
+    Red CLARO: hasta 5 fotos (y una nota opcional). Redes neutras (ATP/ONNET): observacion escrita.
+    En ambas: "Demora por parte del PEM" cuando no hay una causa externa.
+    Las fotos se copian a <carpeta de datos>/demoras/<solicitud>/."""
+
+    def __init__(self, padre, rec, medida):
+        from . import tiempos
+        super().__init__(padre)
+        self.T, self.rec, self.m = tiempos, rec, medida
+        self.neutra = tiempos.es_neutra(medida["red"])
+        self.resultado = None
+        self.fotos = []
+        self.title("Justificar demora")
+        self.configure(bg=C["bg"])
+        self.transient(padre.winfo_toplevel())
+        self.resizable(True, True)
+        caja = tk.Frame(self, bg=C["bg"])
+        caja.pack(fill="both", expand=True, padx=ad.px(22), pady=ad.px(18))
+        tk.Label(caja, text="⚠ " + tiempos.ALERTA, bg=C["bg"], fg=C["err"], font=(FONT, 12, "bold"),
+                 anchor="w").pack(fill="x")
+        tk.Label(caja, text="Solicitud %s · red %s · %d min (límite %d min)." % (
+            rec.get("id") or rec.get("key"), medida["red"], int(medida["minutos"]), medida["limite"]),
+            bg=C["bg"], fg=C["txt"], font=(FONT, 10), anchor="w").pack(fill="x", pady=(4, 10))
+        if self.neutra:
+            tk.Label(caja, text="Escriba la observación de por qué se demoró (red neutra):", bg=C["bg"],
+                     fg=C["mut"], font=(FONT, 9, "bold"), anchor="w").pack(fill="x")
+            self.obs = tk.Text(caja, height=6, width=60, bg=C["card2"], fg=C["txt"], insertbackground=C["txt"],
+                               relief="flat", font=(FONT, 10), wrap="word")
+            self.obs.pack(fill="both", expand=True, pady=(4, 8))
+        else:
+            tk.Label(caja, text="Adjunte hasta %d fotos que expliquen la demora (red Claro):" % tiempos.MAX_FOTOS,
+                     bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"), anchor="w").pack(fill="x")
+            self.lista = tk.Listbox(caja, height=5, bg=C["card2"], fg=C["txt"], relief="flat",
+                                    selectbackground=C["acc"], font=(FONT, 9))
+            self.lista.pack(fill="both", expand=True, pady=(4, 6))
+            bf = ad.Flujo(caja, C["bg"])
+            bf.pack(fill="x")
+            BOTON(bf, "Agregar fotos…", self._agregar, True, 15).pack(side="left")
+            BOTON(bf, "Quitar", self._quitar, False, 8).pack(side="left", padx=6)
+            tk.Label(caja, text="Nota (opcional):", bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"),
+                     anchor="w").pack(fill="x", pady=(10, 0))
+            self.obs = tk.Text(caja, height=2, width=60, bg=C["card2"], fg=C["txt"], insertbackground=C["txt"],
+                               relief="flat", font=(FONT, 10), wrap="word")
+            self.obs.pack(fill="x", pady=(4, 8))
+        self.lbl = tk.Label(caja, text="", bg=C["bg"], fg=C["err"], font=(FONT, 9), anchor="w")
+        self.lbl.pack(fill="x")
+        b = ad.Flujo(caja, C["bg"])
+        b.pack(fill="x", pady=(8, 0))
+        BOTON(b, "Guardar y documentar", self._aceptar, True, 20).pack(side="left")
+        BOTON(b, tiempos.DEMORA_PEM, self._pem, False, 24).pack(side="left", padx=6)
+        BOTON(b, "Cancelar", self.destroy, False, 10).pack(side="left")
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.update_idletasks()
+        self.minsize(min(ad.px(520), self.winfo_screenwidth() - 40), self.winfo_reqheight())
+        self.grab_set()
+        self.focus_set()
+        self.wait_window()
+
+    def _agregar(self):
+        rutas = filedialog.askopenfilenames(parent=self, title="Fotos de la demora", filetypes=[
+            ("Imágenes", "*.jpg *.jpeg *.png *.bmp *.gif *.webp *.heic"), ("Todos", "*.*")])
+        for r in rutas:
+            if len(self.fotos) >= self.T.MAX_FOTOS:
+                self.lbl.config(text="Máximo %d fotos." % self.T.MAX_FOTOS)
+                break
+            if r not in self.fotos:
+                self.fotos.append(r)
+                self.lista.insert("end", os.path.basename(r))
+
+    def _quitar(self):
+        for i in reversed(self.lista.curselection()):
+            self.lista.delete(i)
+            del self.fotos[i]
+
+    def _base(self, tipo):
+        from datetime import datetime
+        return {"tipo": tipo, "red": self.m["red"], "minutos": int(self.m["minutos"]), "limite": self.m["limite"],
+                "observacion": self.obs.get("1.0", "end").strip(), "fotos": [],
+                "en": datetime.now().isoformat(timespec="seconds")}
+
+    def _copiar_fotos(self):
+        import shutil
+        from .rutas import data_dir
+        destino = data_dir() / "demoras" / re.sub(r"[^A-Za-z0-9_\-]", "_", str(self.rec.get("key") or "sin_id"))
+        destino.mkdir(parents=True, exist_ok=True)
+        copias = []
+        for n, r in enumerate(self.fotos, 1):
+            ext = os.path.splitext(r)[1].lower() or ".jpg"
+            d = destino / ("foto_%d%s" % (n, ext))
+            shutil.copy2(r, d)
+            copias.append(str(d))
+        return copias
+
+    def _aceptar(self):
+        j = self._base("observacion" if self.neutra else "fotos")
+        if not self.neutra:
+            j["fotos"] = list(self.fotos)
+        ok, msg = self.T.justificacion_valida(self.m["red"], j)
+        if not ok:
+            self.lbl.config(text=msg)
+            return
+        if not self.neutra:
+            try:
+                j["fotos"] = self._copiar_fotos()
+            except OSError as e:
+                self.lbl.config(text="No se pudieron copiar las fotos: %s" % e)
+                return
+        self.resultado = j
+        self.destroy()
+
+    def _pem(self):
+        if not messagebox.askyesno(self.T.DEMORA_PEM, "Se registrará que la demora de la solicitud %s fue por "
+                                   "parte del PEM (sin causa externa).\n\n¿Confirmar?" %
+                                   (self.rec.get("id") or self.rec.get("key")), parent=self):
+            return
+        self.resultado = self._base("pem")
+        self.destroy()
+
+
 class PanelHistorial(tk.Frame):
     COLS = ("Solicitud", "Cuenta RR", "Cliente", "Red", "Capa 2", "Estado", "Avance",
-            "Plantilla", "Documentación", "Actualizada")
+            "Plantilla", "Tiempo", "Documentación", "Actualizada")
     FILTROS_ESTADO = ("Todos los estados",) + tuple(ESTADOS)
-    FILTROS = ("Todas", "No documentadas", "Documentadas", "Sin guardar")
+    FILTROS = ("Todas", "No documentadas", "Documentadas", "Sin guardar", "Tiempo superado")
 
     def __init__(self, padre, servicio, abrir):
         super().__init__(padre, bg=C["bg"])
@@ -714,7 +897,7 @@ class PanelHistorial(tk.Frame):
             ("Marcar documentada / pendiente", self._alternar), ("Cambiar estado…", self._menu_estado),
             ("Ver IPs libres", self._ips_libres), None, ("Eliminar", self._eliminar)]), False, 8)
         self.b_estado.pack(side="left")
-        m, self.t = _tabla(self, self.COLS, (70, 85, 160, 62, 110, 100, 120, 105, 140, 100), alto=14)
+        m, self.t = _tabla(self, self.COLS, (70, 85, 160, 62, 110, 100, 120, 105, 130, 140, 100), alto=14)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("doc", foreground=C["mut"])
         self.t.tag_configure("pend", foreground=C["txt"])
@@ -743,6 +926,8 @@ class PanelHistorial(tk.Frame):
             regs = [r for r in regs if r.get("documentada_en")]
         elif f == "Sin guardar":
             regs = [r for r in regs if r.get("guardada") is False]
+        elif f == "Tiempo superado":
+            regs = [r for r in regs if r.get("excedido")]
         fe = self.cb_e.get()
         if fe in ESTADOS:
             regs = [r for r in regs if estados.normalizar(r.get("resultado")) == fe]
@@ -753,7 +938,7 @@ class PanelHistorial(tk.Frame):
             self.t.insert("", "end", iid=r["key"], tags=("doc" if r.get("documentada_en") else "pend",), values=(
                 r.get("id") or "—", r.get("rr"), r.get("cliente"), r.get("red"), r.get("capa2"),
                 estados.normalizar(r.get("resultado")) or "—", r.get("estado"), self._guardada_texto(r),
-                self._doc_texto(r), (r.get("actualizada") or "")[5:16].replace("T", " ")))
+                r.get("tiempo", "—"), self._doc_texto(r), (r.get("actualizada") or "")[5:16].replace("T", " ")))
         if sel and self.t.exists(sel):
             self.t.selection_set(sel)
         pend = sum(1 for r in self.regs if not r.get("documentada_en"))
@@ -890,6 +1075,9 @@ class PanelAjustes(tk.Frame):
                      (("ms_usuario", "Correo", False), ("ms_clave", "Clave (opcional)", True)))
         self._bloque("SecureCRT", "Usuario y clave para entrar a los equipos.",
                      (("crt_usuario", "Usuario", False), ("crt_clave", "Clave", True)))
+        self._bloque("Carpeta del equipo", "Carpeta de OneDrive/SharePoint que TODOS los PEM tienen sincronizada. "
+                     "Ahí cada uno publica si está en línea (pestaña Equipo). Requiere su nombre en SharePoint "
+                     "(funciones avanzadas).", (("carpeta_equipo", "Carpeta", False),))
         # ---- avanzado
         self.avz = tk.BooleanVar(value=False)
         tk.Checkbutton(self, text="Mostrar funciones avanzadas (Cola, Admin, IP Capa 2)", variable=self.avz,
@@ -1009,9 +1197,19 @@ class PanelAjustes(tk.Frame):
             e.grid(row=3, column=col, sticky="w", ipady=5, padx=(0 if col == 0 else 12, 0))
             e._secreto = secreto
             self.campos[clave] = e
+            if clave == "carpeta_equipo":
+                e.config(width=48)
+                BOTON(inner, "Examinar…", lambda en=e: self._examinar_carpeta_equipo(en), False, 10).grid(
+                    row=3, column=1, sticky="w", padx=(8, 0))
             if clave == "securecrt_exe":
                 e.config(width=48)
                 BOTON(inner, "Examinar…", lambda en=e: self._examinar_exe(en), False, 10).grid(row=3, column=1, sticky="w", padx=(8, 0))
+
+    def _examinar_carpeta_equipo(self, entrada):
+        d = filedialog.askdirectory(title="Carpeta compartida del equipo (OneDrive/SharePoint)")
+        if d:
+            entrada.delete(0, "end")
+            entrada.insert(0, os.path.normpath(d))
 
     def _examinar_exe(self, entrada):
         r = filedialog.askopenfilename(title="Seleccione SecureCRT (SecureCRTPortable.exe o SecureCRT.exe)",
@@ -1031,6 +1229,7 @@ class PanelAjustes(tk.Frame):
         datos["pem_nombre"] = aj.get("pem_nombre", "")
         datos["securecrt_exe"] = aj.get("securecrt_exe", "")
         datos["servidor_central"] = aj.get("servidor_central", "")
+        datos["carpeta_equipo"] = aj.get("carpeta_equipo", "")
         self.auto.set(bool(aj.get("auto_asignar", False)))
         self.sub.set(bool(aj.get("subcarpeta_dia", True)))
         self.avz.set(bool(aj.get("modo_avanzado", False)))
@@ -1055,6 +1254,7 @@ class PanelAjustes(tk.Frame):
                 self.sv.ajustes["pem_nombre"] = self.campos["pem_nombre"].get().strip()
                 self.sv.ajustes["securecrt_exe"] = self.campos["securecrt_exe"].get().strip()
                 self.sv.ajustes["servidor_central"] = self.campos["servidor_central"].get().strip()
+                self.sv.ajustes["carpeta_equipo"] = self.campos["carpeta_equipo"].get().strip()
                 self.sv.ajustes["auto_asignar"] = bool(self.auto.get())
                 guardar_ajustes(self.sv.ajustes)
             self.lbl.config(text="Guardado", fg=C["ok"])

@@ -22,6 +22,9 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
 - Fase 3: `hac_zac/agente.py` (lógica pura, barreras en código; la IA solo clasifica), `hac_zac/whatsapp.py` (Cloud API,
   firma X-Hub-Signature-256, transporte Consola), `hac_zac/ia.py` (Azure OpenAI por REST; token de `az` o api key),
   `chat_tecnico.py` (simulador). Rutas del central: /latido, /mensaje (PEM→técnico literal), /whatsapp (webhook).
+- `hac_zac/presencia.py` (en línea/ausente/desconectado por carpeta compartida de OneDrive, `carpeta_equipo`),
+  `hac_zac/tiempos.py` (límite Claro 15 / neutras 30 min desde la asignación; justificación obligatoria al documentar:
+  fotos o observación o "Demora por parte del PEM"; `DialogoDemora` en panel.py), pestaña Equipo (`PanelEquipo`).
 - `sp_lector.py`: lee la lista de SharePoint con Selenium y escribe estados (REST/ETag).
 - `correo_lector.py`: busca en Outlook web la cuenta RR, abre los correos y confirma el SOLICITUD ID exacto antes de guardar la plantilla. Refresca cada 60 s.
 - `portal_csr.py`: consulta del Support Portal por serial o MAC.

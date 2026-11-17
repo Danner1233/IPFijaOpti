@@ -85,6 +85,19 @@ celular de la solicitud); a la IA solo le llega el texto del técnico. Sin IA, e
 **IA (gpt-5-mini en Foundry):** `py -3 servidor_central.py --configurar-ia` (endpoint y despliegue; API key opcional,
 si no se usa `az login`) y luego `py -3 servidor_central.py --probar-ia "me pasas la ip?"`.
 
+## Equipo en línea y tiempo de gestión
+**Equipo (pestaña Equipo):** en Ajustes → "Carpeta del equipo" se elige una carpeta de OneDrive/SharePoint que todos
+los PEM tengan sincronizada (y su nombre en SharePoint en funciones avanzadas). Cada app publica cada minuto:
+- **En línea**: usó la app (clic/tecla) en los últimos 5 min o tiene un proceso corriendo.
+- **Ausente**: app abierta, 5 min sin uso. **Desconectado**: no publica hace más de 3 min.
+- Se suman los minutos en línea del día (sin contar ausencias). No se publica ningún dato de clientes.
+
+**Tiempo de gestión:** corre desde que la solicitud se asigna (cola) hasta Documentar. Límite: **Claro 15 min**,
+**ATP/ONNET 30 min**. Se ve en la plantilla (⏱ 12/15 min), en la Cola y en el Historial (filtro "Tiempo superado").
+Al pasarse sale la alerta "Superó el tiempo de gestión · baja productividad" (una vez). Para documentar es
+obligatorio justificar: **Claro** hasta 5 fotos (+ nota opcional), **neutras** una observación; en ambas
+existe "Demora por parte del PEM". Las fotos se copian a `<carpeta de datos>\demoras\<solicitud>\`.
+
 ## Pruebas
     python -m unittest discover -s tests -v
 Usan una carpeta temporal (`HAC_ZAC_DATOS`); no tocan datos reales.
