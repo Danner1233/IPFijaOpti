@@ -141,5 +141,29 @@ class PruebasClientePEM(unittest.TestCase):
         self.assertFalse(c.latir_una_vez()["ok"])
 
 
+class PruebasCambiosConElCentralAbierto(unittest.TestCase):
+    """--agregar / --token con el central corriendo: antes el central los pisaba con lo que tenia en memoria."""
+
+    def test_token_nuevo_desde_afuera_sirve_y_no_se_pierde(self):
+        import time
+        d = tempfile.mkdtemp(prefix="hz_sync_")
+        with mock.patch.dict(os.environ, {"HAC_ZAC_DATOS": d}):
+            abierto = S.Central(d)                      # el central que esta corriendo
+            viejo = abierto.R.agregar_pem(abierto.estado, "Ana Uno")
+            abierto.guardar()
+            time.sleep(0.05)
+            consola = S.Central(d)                      # otra ventana: --token "Ana Uno"
+            nuevo = consola.R.nuevo_token(consola.estado, "Ana Uno")
+            consola.R.agregar_pem(consola.estado, "Beto Dos")
+            consola.guardar()
+            abierto.repartir([], lambda *a: True, log=lambda m: None)    # su ciclo guarda cada 20 s
+            self.assertEqual(abierto.atender_latido(nuevo, {})[0], 200, "el token nuevo funciona sin reiniciar")
+            self.assertEqual(abierto.atender_latido(viejo, {})[0], 401)
+            self.assertIn("Beto Dos", abierto.estado["pems"])
+            with open(os.path.join(d, "central.json"), encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["pems"]["Ana Uno"]["token"], nuevo, "no se pisa el archivo")
+            self.assertTrue(abierto.estado["pems"]["Ana Uno"]["latido"], "conserva lo de memoria (latido)")
+
+
 if __name__ == "__main__":
     unittest.main()

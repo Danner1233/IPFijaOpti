@@ -73,13 +73,46 @@ class Central:
             self.estado = reparto.nuevo_estado()
         self.estado.setdefault("pems", {})
         self.estado.setdefault("asignaciones", {})
+        self._mtime = self._mtime_archivo()
+
+    def _mtime_archivo(self):
+        try:
+            return os.path.getmtime(self.ruta)
+        except OSError:
+            return None
+
+    def sincronizar_pems(self):
+        """Si alguien cambio central.json desde afuera (--agregar, --token, --quitar con el central abierto), se toman
+        de ahi los PEM y sus tokens. Sin esto, el central seguia con los de memoria y los volvia a escribir."""
+        with self.lock:
+            m = self._mtime_archivo()
+            if m is None or m == self._mtime:
+                return False
+            try:
+                with open(self.ruta, encoding="utf-8") as f:
+                    en_disco = json.load(f).get("pems") or {}
+            except (OSError, ValueError):
+                return False
+            pems = self.estado["pems"]
+            for n in list(pems):
+                if n not in en_disco:
+                    del pems[n]
+            for n, p in en_disco.items():
+                if n in pems:
+                    pems[n]["token"] = p.get("token", pems[n].get("token"))
+                else:
+                    pems[n] = p
+            self._mtime = m
+            return True
 
     def guardar(self):
         with self.lock:
+            self.sincronizar_pems()                   # nunca pisar un cambio hecho desde afuera
             tmp = self.ruta + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.estado, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self.ruta)
+            self._mtime = self._mtime_archivo()
 
     # ---------------------------------------------------------------- lo que pide la aplicacion del PEM
     def atender_latido(self, token, cuerpo, ahora=None):
@@ -87,6 +120,7 @@ class Central:
         from hac_zac import cola
         ahora = ahora or datetime.now()
         with self.lock:
+            self.sincronizar_pems()
             nombre = self.R.autenticar(self.estado, token)
             if not nombre:
                 return 401, {"ok": False, "error": "Token no valido. Pidale uno nuevo al administrador."}
@@ -151,6 +185,7 @@ class Central:
         from hac_zac import agente
         ahora = ahora or datetime.now()
         with self.lock:
+            self.sincronizar_pems()
             nombre = self.R.autenticar(self.estado, token)
             if not nombre:
                 return 401, {"ok": False, "error": "Token no valido."}
