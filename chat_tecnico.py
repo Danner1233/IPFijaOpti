@@ -30,22 +30,27 @@ def enviar(url, tel, texto):
         return r.status
 
 
-def seguir(ruta, tel, parar):
-    """Muestra lo que el agente le envia a ese telefono."""
-    pos = os.path.getsize(ruta) if os.path.exists(ruta) else 0
+def seguir(rutas, tel, parar):
+    """Muestra lo que el agente le envia a ese telefono (central real y carpeta de la demo)."""
+    pos = {r: (os.path.getsize(r) if os.path.exists(r) else 0) for r in rutas}
     while not parar.is_set():
-        if os.path.exists(ruta) and os.path.getsize(ruta) > pos:
-            with open(ruta, encoding="utf-8") as f:
-                f.seek(pos)
-                for linea in f:
-                    try:
-                        m = json.loads(linea)
-                    except ValueError:
-                        continue
-                    if m.get("a") == tel:
-                        print("\n[AGENTE %s]\n%s\n" % (m["hora"][11:19], m["texto"]))
-                pos = f.tell()
-            print("tecnico> ", end="", flush=True)
+        for ruta in rutas:
+            if not os.path.exists(ruta):
+                continue
+            if os.path.getsize(ruta) < pos[ruta]:
+                pos[ruta] = 0                           # la demo arranco de nuevo (archivo nuevo)
+            if os.path.getsize(ruta) > pos[ruta]:
+                with open(ruta, encoding="utf-8") as f:
+                    f.seek(pos[ruta])
+                    for linea in f:
+                        try:
+                            m = json.loads(linea)
+                        except ValueError:
+                            continue
+                        if m.get("a") == tel:
+                            print("\n[AGENTE %s]\n%s\n" % (m["hora"][11:19], m["texto"]))
+                    pos[ruta] = f.tell()
+                print("tecnico> ", end="", flush=True)
         time.sleep(0.5)
 
 
@@ -56,8 +61,9 @@ def main():
     a = ap.parse_args()
     tel = telefono(a.tel)
     parar = threading.Event()
-    threading.Thread(target=seguir, args=(os.path.join(carpeta_central(), "whatsapp_salida.jsonl"), tel, parar),
-                     daemon=True).start()
+    base = carpeta_central().rstrip("\\/")
+    rutas = [os.path.join(base, "whatsapp_salida.jsonl"), os.path.join(base + "_demo", "whatsapp_salida.jsonl")]
+    threading.Thread(target=seguir, args=(rutas, tel, parar), daemon=True).start()
     print("Simulador del tecnico %s. Escriba y pulse Enter (Ctrl+C para salir)." % tel)
     try:
         while True:

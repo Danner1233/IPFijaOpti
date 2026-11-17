@@ -462,6 +462,28 @@ def _gestionar_pems(a, central):
     print("\n".join(central.tabla()) or "   (sin PEM: use --agregar)")
 
 
+def _carpeta_demo(carpeta):
+    """La demo (--archivo --demo) trabaja en una carpeta APARTE que arranca limpia cada vez, con los mismos PEM y
+    tokens del central real: asi sus casos de prueba nunca quedan como asignaciones abiertas del central de verdad."""
+    import shutil
+    demo = carpeta.rstrip("\\/") + "_demo"
+    shutil.rmtree(demo, ignore_errors=True)
+    os.makedirs(demo, exist_ok=True)
+    try:
+        with open(os.path.join(carpeta, "central.json"), encoding="utf-8") as f:
+            pems = json.load(f).get("pems") or {}
+    except (OSError, ValueError):
+        pems = {}
+    for p in pems.values():
+        p.update(latido="", disponible=False)
+    with open(os.path.join(demo, "central.json"), "w", encoding="utf-8") as f:
+        json.dump({"pems": pems, "asignaciones": {}}, f, ensure_ascii=False, indent=2)
+    os.environ["HAC_ZAC_DATOS"] = demo
+    os.environ["HAC_ZAC_CENTRAL"] = demo
+    print("DEMO: datos de prueba en %s (el central real no se toca)." % demo)
+    return demo
+
+
 def _preparar_agente(central, carpeta, simulado=False):
     """WhatsApp (real, simulado o ninguno) e IA (opcional: sin ella el agente usa reglas)."""
     from hac_zac import ia, whatsapp
@@ -553,6 +575,8 @@ def main():
     carpeta = _preparar_datos()
     if a.configurar_whatsapp or a.configurar_ia or a.probar_ia:
         return _configurar(a, carpeta)
+    if a.archivo and a.demo:
+        carpeta = _carpeta_demo(carpeta)
     central = Central(carpeta, simular=a.simular or (bool(a.archivo) and not a.demo))
     if a.agregar or a.quitar or a.token or a.lista:
         _gestionar_pems(a, central)
