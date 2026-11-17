@@ -220,6 +220,20 @@ def _leer_panel(driver, antes=""):
     return esperar(listo, ESPERA_LECTURA_S) or []
 
 
+def _releer(driver, textos, sol_id, espera=2.0, dormir=time.sleep):
+    """Segunda lectura del panel cuando la primera no trajo SOLICITUD ID. Devuelve (texto, textos)."""
+    dormir(espera)
+    try:
+        nuevos = driver.execute_script(JS_LECTURA) or []
+    except Exception:
+        nuevos = []
+    if isinstance(nuevos, str):
+        nuevos = [nuevos]
+    if nuevos and any(id_del_correo(t) for t in nuevos):
+        return elegir_texto(nuevos, sol_id), nuevos
+    return elegir_texto(textos, sol_id), textos
+
+
 def _volcar_diagnostico(driver, motivo):
     """--debug: guarda lo necesario para ajustar selectores cuando algo NO se encuentra.
     Ojo: outlook_debug_pagina.html y la captura pueden traer datos de clientes; no los publique."""
@@ -310,6 +324,9 @@ def revisar(driver, debug=False, pendientes=None, guardar=None):
                 textos = _leer_panel(driver, previo["texto"])
                 previo["texto"] = "\n".join(textos)
                 texto = elegir_texto(textos, sol_id)
+                if textos and not id_del_correo(texto):
+                    # El panel pudo leerse antes de terminar de cargar el cuerpo: se espera y se lee otra vez.
+                    texto, textos = _releer(driver, textos, sol_id)
                 if debug:
                     with open(os.path.join(AQUI, "outlook_debug_mensaje.txt"), "w", encoding="utf-8") as f:
                         f.write(etiqueta + "\n\n" + ("\n\n----- mensaje -----\n\n".join(textos) or "(panel vacio)"))

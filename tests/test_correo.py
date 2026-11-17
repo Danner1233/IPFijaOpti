@@ -159,5 +159,31 @@ class PruebasFormatosDeCorreo(unittest.TestCase):
         t = "De: X\nAsunto: Y\n\n" + correo("64888").replace(" ", " ") + " 2026\nFirma"
         self.assertTrue(plantilla.extraer_solicitud(t).startswith("++++++SOLICITUD ID: 64888"))
 
+class PruebasRelectura(unittest.TestCase):
+    """Si el panel se leyo antes de cargar el cuerpo, una segunda lectura encuentra el ID."""
+
+    class Driver:
+        def __init__(self, textos):
+            self.textos = textos
+
+        def execute_script(self, js):
+            return self.textos
+
+    def test_segunda_lectura_trae_el_id(self):
+        d = self.Driver(["Asunto: solicitud", correo("64888")])
+        texto, _ = correo_lector._releer(d, ["Cargando..."], "64888", dormir=lambda s: None)
+        self.assertIn("SOLICITUD ID: 64888", texto)
+
+    def test_si_sigue_sin_id_se_queda_con_lo_primero(self):
+        texto, textos = correo_lector._releer(self.Driver(["otra cosa"]), ["RE: hola"], "1", dormir=lambda s: None)
+        self.assertEqual((texto, textos), ("RE: hola", ["RE: hola"]))
+
+    def test_driver_que_falla_no_rompe(self):
+        class Roto:
+            def execute_script(self, js):
+                raise RuntimeError("sesion cerrada")
+        self.assertEqual(correo_lector._releer(Roto(), ["x"], "1", dormir=lambda s: None)[0], "x")
+
+
 if __name__ == "__main__":
     unittest.main()
