@@ -202,10 +202,15 @@ class Ui(object):
         self.log(self.mensaje)
 
     def esperar_solicitud(self):
-        """Espera a que el operador pulse Iniciar. None si cierra la ventana."""
+        """Espera a que el operador pulse Iniciar. None si cierra la ventana.
+        Mientras espera, cada MANTENER_VIVA_S mantiene viva la sesion del jump host (ver mantener_sesion)."""
         self._escribir()
         ruta = self._ruta("solicitud.json")
+        ultimo = time.time()
         while True:
+            if time.time() - ultimo >= MANTENER_VIVA_S:
+                mantener_sesion(self.log)
+                ultimo = time.time()
             if os.path.exists(ruta):
                 datos = _leer_json(ruta)
                 if datos:
@@ -640,6 +645,39 @@ def _linea_actual():
         return crt.Screen.Get(fila, 1, fila, crt.Screen.Columns).strip()
     except Exception:
         return ""
+
+
+MANTENER_VIVA_S = 240      # cada 4 min, SOLO mientras se espera una solicitud
+
+
+def mantener_sesion(log=None):
+    """Que la sesion del jump host no se cierre nunca:
+    * si se cayo, la reconecta (con la clave guardada en la sesion) y espera el prompt;
+    * si esta conectada, envia un Enter en el prompt: el jump host no la cierra por inactividad.
+    Solo se llama entre procesos (esperando solicitud), nunca en medio de una configuracion.
+    Devuelve 'ok', 'reconectada' o 'sin_conexion'. Nunca lanza error."""
+    try:
+        if crt.Session.Connected:
+            crt.Screen.Send("\r")
+            return "ok"
+    except Exception:
+        return "sin_conexion"
+    for intento in range(3):
+        try:
+            try:
+                crt.Session.Connect()
+            except Exception:
+                crt.Session.Connect('/S "%s"' % crt.Session.Path)
+        except Exception:
+            crt.Sleep(5000)
+            continue
+        if esperar_jump_host(120):
+            if log:
+                log("La sesion del jump host se habia cerrado: reconectada.", "warn")
+            return "reconectada"
+    if log:
+        log("ATENCION: la sesion del jump host se cerro y no se pudo reconectar. Reconectela en SecureCRT.", "warn")
+    return "sin_conexion"
 
 
 def esperar_jump_host(maximo_s=180):
