@@ -29,6 +29,28 @@ def _temp_propio() -> str:
     return base
 
 
+# Basura que no hace falta copiar (se regenera) y candados que impedirian abrir el perfil copiado.
+_NO_COPIAR = ("Cache", "Code Cache", "GPUCache", "GrShaderCache", "GraphiteDawnCache", "ShaderCache", "DawnCache",
+              "Crashpad", "BrowserMetrics*", "CrashpadMetrics*", "Singleton*", "lockfile", "LOCK")
+
+
+def perfil_forms() -> str:
+    """Perfil del navegador de Forms FUERA de OneDrive (OneDrive bloquea/sincroniza los archivos del perfil y el
+    navegador falla al arrancar), junto a los demas perfiles en %LOCALAPPDATA%\\hac_zac\\.
+    La primera vez copia el perfil viejo (carpeta de datos\\browser_profile) para conservar la sesion iniciada;
+    el viejo queda intacto y se puede borrar a mano cuando todo funcione."""
+    import shutil
+    nuevo = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "hac_zac", "perfil_forms")
+    viejo = str(data_dir() / "browser_profile")
+    if not os.path.isdir(nuevo) and os.path.isdir(viejo):
+        try:
+            shutil.copytree(viejo, nuevo, ignore=shutil.ignore_patterns(*_NO_COPIAR))
+        except Exception:
+            shutil.rmtree(nuevo, ignore_errors=True)     # copia a medias: mejor perfil limpio (pide iniciar sesion)
+    os.makedirs(nuevo, exist_ok=True)
+    return nuevo
+
+
 def _fill(page, q, val, timeout=15000):
     # .count() no espera; wait_for() sí (Forms renderiza por JS y tarda unos segundos).
     loc = page.get_by_text(q, exact=True)
@@ -84,7 +106,7 @@ def ejecutar_formulario(d: dict, confirmar_envio: Callable[[], bool], log: Calla
     _temp_propio()                      # antes de iniciar Playwright: el proceso hijo hereda TEMP
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
-            str(data_dir() / "browser_profile"), channel=cfg.get("browser_channel", "msedge"),
+            perfil_forms(), channel=cfg.get("browser_channel", "msedge"),
             headless=False, args=["--test-type"])
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
