@@ -199,26 +199,43 @@ class Servicio:
 
     @staticmethod
     def estado_sp_de(rec: dict):
-        """(id, estado) que quedara en SharePoint al documentar esta solicitud; None si no tiene ID."""
+        """(id, estado) que quedara en SharePoint al documentar esta solicitud; None si no tiene ID o no hay un
+        estado (ya no se escribe 'No exitosa' por defecto: asi se daño la 64849)."""
         from . import estados
         id_ = str((rec or {}).get("id") or "").strip()
-        if not id_:
+        est = estados.normalizar((rec or {}).get("resultado") or "")
+        if not id_ or not est:
             return None
-        return id_, estados.normalizar(rec.get("resultado") or "") or estados.NO_EXITOSA
+        return id_, est
 
     @staticmethod
     def _pedir_estado_sp(rec: dict) -> None:
-        """Documentada: la solicitud queda Exitosa / No exitosa / Escalamiento en SharePoint (lo escribe el lector
-        de SharePoint) y se libera para que pueda tomar otra."""
+        """Documentada: la solicitud queda Exitosa / No exitosa / Escalamiento en SharePoint, con su causa y la
+        observacion del PEM (lo escribe el lector de SharePoint) y se libera para que pueda tomar otra."""
         from . import cola
         try:
             par = Servicio.estado_sp_de(rec)
             if par:
-                cola.pedir_estado_sp(*par)
+                cola.pedir_estado_sp(par[0], par[1], rec.get("causa", ""), rec.get("observacion", ""),
+                                     cola.nombre_configurado())
                 cola.cambiar_estado(par[0], "terminada")
         except Exception:
             from . import log
             log.obtener("servicio").exception("no se pudo pedir el estado final a SharePoint")
+
+    def aplicar_resultado(self, key: str, estado: str, causa: str = "", observacion: str = ""):
+        """Estado + causa + observacion elegidos por el PEM. Si la solicitud ya estaba documentada, se actualiza
+        tambien en SharePoint."""
+        from . import causas
+        if estado not in estados.OPCIONES_MANUALES:
+            return None
+        if not causas.requiere_causa(estado):
+            causa = ""
+        rec = self.actualizar(key, resultado=estado, resultado_manual=estado, causa=causa,
+                              observacion=(observacion or "").strip())
+        if rec and rec.get("documentada_en"):
+            self._pedir_estado_sp(rec)
+        return rec
 
     # ------------------------------------------------------------------ consulta
     def listar(self, filtro: str = ""):

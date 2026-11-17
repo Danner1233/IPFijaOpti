@@ -476,19 +476,30 @@ class PanelPlantilla(tk.Frame):
         self.lbl_est.config(text="Doble clic en un segmento para ver sus IP libres; Ctrl+C copia el segmento.")
 
     def _menu_estado(self):
-        """Cambia a mano el estado: Exitosa / Escalamiento / No exitosa."""
+        """Cambia el estado (con su causa y observacion). Si ya estaba documentada, se actualiza en SharePoint."""
         if not (self.rec and self.rec.get("key")):
             return
+        r = DialogoResultado(self, self.sv.store.cargar(self.rec["key"]) or self.rec).resultado
+        if not r:
+            return
+        rec = self.sv.aplicar_resultado(self.rec["key"], r["estado"], r["causa"], r["observacion"])
+        if rec:
+            self.rec = rec
+            self.pill.config(text="  %s  ▾  " % r["estado"], fg=C[COLOR_RES.get(r["estado"], "mut")])
+            if rec.get("documentada_en"):
+                self.lbl_est.config(text="Estado actualizado; se escribirá en SharePoint.")
+            if self.al_cambiar:
+                self.al_cambiar()
 
-        def poner(estado):
-            rec = self.sv.cambiar_resultado(self.rec["key"], estado)
-            if rec:
-                self.rec = rec
-                self.pill.config(text="  %s  ▾  " % estado, fg=C[COLOR_RES.get(estado, "mut")])
-                if self.al_cambiar:
-                    self.al_cambiar()
-
-        menu_estado(self.pill, poner)
+    def _confirmar_resultado(self):
+        """Al documentar: confirmar estado + causa + observacion (obligatorio). False si cancela."""
+        r = DialogoResultado(self, self.sv.store.cargar(self.rec["key"]) or self.rec,
+                             titulo_boton="Continuar").resultado
+        if not r:
+            return False
+        self.rec = self.sv.aplicar_resultado(self.rec["key"], r["estado"], r["causa"], r["observacion"]) or self.rec
+        self.pill.config(text="  %s  ▾  " % r["estado"], fg=C[COLOR_RES.get(r["estado"], "mut")])
+        return True
 
     def _pill_doc(self):
         r = self.rec or {}
@@ -695,6 +706,8 @@ class PanelPlantilla(tk.Frame):
                                    "solicitud, regional, actividad, IP asignada…) y vuelva a pulsar Documentar." %
                                    ", ".join(doc.ETIQUETAS.get(k, k) for k in faltan))
             return
+        if not self._confirmar_resultado():
+            return
         if not self._justificar_si_hace_falta():
             return
         det = "\n".join("%s: %s" % kv for kv in doc.resumen(d))
@@ -743,6 +756,107 @@ class PanelPlantilla(tk.Frame):
 
 
 # ======================================================================================= HISTORIAL
+class DialogoResultado(tk.Toplevel):
+    """Estado de la solicitud (Exitosa / No exitosa / Escalamiento), su CAUSA (solo las de la red de la solicitud y
+    las generales) y la OBSERVACION del PEM. Es lo que se escribe en SharePoint.
+    resultado = {"estado", "causa", "observacion"} o None si se cancela."""
+
+    def __init__(self, padre, rec, titulo_boton="Guardar"):
+        from . import causas, tiempos
+        super().__init__(padre)
+        self.causas_mod, self.rec = causas, rec
+        self.red = tiempos.red_de(rec)
+        self.resultado = None
+        self._auto = ""                               # texto que se lleno solo (accion de la causa)
+        self.title("Resultado de la solicitud")
+        self.configure(bg=C["bg"])
+        self.transient(padre.winfo_toplevel())
+        caja = tk.Frame(self, bg=C["bg"])
+        caja.pack(fill="both", expand=True, padx=ad.px(22), pady=ad.px(18))
+        tk.Label(caja, text="Solicitud %s · red %s" % (rec.get("id") or rec.get("key"), self.red), bg=C["bg"],
+                 fg=C["txt"], font=(FONT, 12, "bold"), anchor="w").pack(fill="x")
+        tk.Label(caja, text="Esto es lo que quedará en SharePoint (estado, causa y observación).", bg=C["bg"],
+                 fg=C["mut"], font=(FONT, 9), anchor="w").pack(fill="x", pady=(2, 10))
+        fe = tk.Frame(caja, bg=C["bg"])
+        fe.pack(fill="x")
+        inicial = estados.normalizar(rec.get("resultado") or "") or estados.EXITOSA
+        self.estado = tk.StringVar(value=inicial)
+        for e in estados.OPCIONES_MANUALES:
+            tk.Radiobutton(fe, text=e, value=e, variable=self.estado, command=self._cambio_estado,
+                           bg=C["bg"], fg=C[COLOR_RES.get(e, "txt")], selectcolor=C["card2"],
+                           activebackground=C["bg"], font=(FONT, 11, "bold"), bd=0,
+                           highlightthickness=0).pack(side="left", padx=(0, 18))
+        self.caja_causa = tk.Frame(caja, bg=C["bg"])
+        tk.Label(self.caja_causa, text="Causa:", bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"),
+                 anchor="w").pack(fill="x", pady=(12, 2))
+        self.cb = ttk.Combobox(self.caja_causa, state="readonly", width=62, style="HZ.TCombobox")
+        self.cb.pack(fill="x")
+        self.cb.bind("<<ComboboxSelected>>", lambda e: self._cambio_causa())
+        self.info = tk.Label(self.caja_causa, text="", bg=C["card"], fg=C["txt"], font=(FONT, 9), anchor="w",
+                             justify="left", padx=10, pady=8)
+        self.info.pack(fill="x", pady=(8, 0))
+        ad.envolver(self.info, 20)
+        self.lbl_obs = tk.Label(caja, text="Observación (se agrega en SharePoint, no borra lo que haya):", bg=C["bg"],
+                                fg=C["mut"], font=(FONT, 9, "bold"), anchor="w")
+        self.lbl_obs.pack(fill="x", pady=(12, 2))
+        self.obs = tk.Text(caja, height=4, width=64, bg=C["card2"], fg=C["txt"], insertbackground=C["txt"],
+                           relief="flat", font=(FONT, 10), wrap="word")
+        self.obs.pack(fill="both", expand=True)
+        if rec.get("observacion"):
+            self.obs.insert("1.0", rec["observacion"])
+        self.lbl = tk.Label(caja, text="", bg=C["bg"], fg=C["err"], font=(FONT, 9), anchor="w")
+        self.lbl.pack(fill="x", pady=(6, 0))
+        b = ad.Flujo(caja, C["bg"])
+        b.pack(fill="x", pady=(8, 0))
+        BOTON(b, titulo_boton, self._aceptar, True, 16).pack(side="left")
+        BOTON(b, "Cancelar", self.destroy, False, 10).pack(side="left", padx=6)
+        self._cambio_estado(causa_inicial=rec.get("causa", ""))
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.update_idletasks()
+        self.minsize(min(ad.px(560), self.winfo_screenwidth() - 40), self.winfo_reqheight())
+        self.grab_set()
+        self.focus_set()
+        self.wait_window()
+
+    def _opciones(self):
+        return self.causas_mod.para(self.estado.get(), self.red)
+
+    def _cambio_estado(self, causa_inicial=""):
+        if self.causas_mod.requiere_causa(self.estado.get()):
+            nombres = [c["causa"] for c in self._opciones()]
+            self.cb.config(values=nombres)
+            self.cb.set(causa_inicial if causa_inicial in nombres else "")
+            self.caja_causa.pack(fill="x", before=self.lbl_obs)
+            self._cambio_causa()
+        else:
+            self.caja_causa.pack_forget()
+            if self.obs.get("1.0", "end").strip() == self._auto.strip():
+                self.obs.delete("1.0", "end")
+                self._auto = ""
+
+    def _cambio_causa(self):
+        c = next((x for x in self._opciones() if x["causa"] == self.cb.get()), None)
+        if not c:
+            self.info.config(text="Elija la causa (se muestran las de la red %s y las generales)." % self.red)
+            return
+        self.info.config(text="Notifica: %s   ·   Escala: %s\nAcción: %s" % (
+            c["notifica"] or "—", c["escala"] or "—", c["accion"]))
+        actual = self.obs.get("1.0", "end").strip()
+        if not actual or actual == self._auto.strip():     # solo si no la ha escrito el PEM
+            self.obs.delete("1.0", "end")
+            self.obs.insert("1.0", c["accion"])
+            self._auto = c["accion"]
+
+    def _aceptar(self):
+        est = self.estado.get()
+        causa = self.cb.get() if self.causas_mod.requiere_causa(est) else ""
+        if self.causas_mod.requiere_causa(est) and not causa:
+            self.lbl.config(text="Elija la causa de %s." % est)
+            return
+        self.resultado = {"estado": est, "causa": causa, "observacion": self.obs.get("1.0", "end").strip()}
+        self.destroy()
+
+
 class DialogoDemora(tk.Toplevel):
     """Justificacion OBLIGATORIA cuando una solicitud supero el tiempo de gestion.
     Red CLARO: hasta 5 fotos (y una nota opcional). Redes neutras (ATP/ONNET): observacion escrita.
@@ -865,7 +979,7 @@ class DialogoDemora(tk.Toplevel):
 
 class PanelHistorial(tk.Frame):
     COLS = ("Solicitud", "Cuenta RR", "Cliente", "Red", "Capa 2", "Estado", "Avance",
-            "Plantilla", "Tiempo", "Documentación", "Actualizada")
+            "Causa", "Plantilla", "Tiempo", "Documentación", "Actualizada")
     FILTROS_ESTADO = ("Todos los estados",) + tuple(ESTADOS)
     FILTROS = ("Todas", "No documentadas", "Documentadas", "Sin guardar", "Tiempo superado")
 
@@ -897,7 +1011,7 @@ class PanelHistorial(tk.Frame):
             ("Marcar documentada / pendiente", self._alternar), ("Cambiar estado…", self._menu_estado),
             ("Ver IPs libres", self._ips_libres), None, ("Eliminar", self._eliminar)]), False, 8)
         self.b_estado.pack(side="left")
-        m, self.t = _tabla(self, self.COLS, (70, 85, 160, 62, 110, 100, 120, 105, 130, 140, 100), alto=14)
+        m, self.t = _tabla(self, self.COLS, (70, 85, 160, 62, 110, 100, 120, 170, 105, 130, 140, 100), alto=14)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("doc", foreground=C["mut"])
         self.t.tag_configure("pend", foreground=C["txt"])
@@ -937,7 +1051,7 @@ class PanelHistorial(tk.Frame):
         for r in self.regs:
             self.t.insert("", "end", iid=r["key"], tags=("doc" if r.get("documentada_en") else "pend",), values=(
                 r.get("id") or "—", r.get("rr"), r.get("cliente"), r.get("red"), r.get("capa2"),
-                estados.normalizar(r.get("resultado")) or "—", r.get("estado"), self._guardada_texto(r),
+                estados.normalizar(r.get("resultado")) or "—", r.get("estado"), r.get("causa") or "—", self._guardada_texto(r),
                 r.get("tiempo", "—"), self._doc_texto(r), (r.get("actualizada") or "")[5:16].replace("T", " ")))
         if sel and self.t.exists(sel):
             self.t.selection_set(sel)
@@ -963,16 +1077,16 @@ class PanelHistorial(tk.Frame):
             self.after(200, lambda: self.winfo_toplevel().v_res._documentar())
 
     def _menu_estado(self):
-        """Fija a mano Exitosa / Escalamiento / No exitosa a la solicitud seleccionada."""
+        """Cambia estado + causa + observacion de la solicitud seleccionada (si ya estaba documentada, tambien en
+        SharePoint)."""
         k = self._clave()
-        if not k:
+        rec = self.sv.store.cargar(k) if k else None
+        if not rec:
             return
-
-        def poner(estado):
-            self.sv.cambiar_resultado(k, estado)
+        r = DialogoResultado(self, rec).resultado
+        if r:
+            self.sv.aplicar_resultado(k, r["estado"], r["causa"], r["observacion"])
             self.refrescar()
-
-        menu_estado(self.b_estado, poner)
 
     def _ips_libres(self):
         """Reabre el recuadro de IPs/segmentos de la solicitud seleccionada."""

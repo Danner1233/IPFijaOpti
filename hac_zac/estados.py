@@ -16,6 +16,21 @@ EXITOSA = "Exitosa"
 ESCALAMIENTO = "Escalamiento"
 NO_EXITOSA = "No exitosa"
 OPCIONES_MANUALES = (EXITOSA, ESCALAMIENTO, NO_EXITOSA)
+ASIGNADA = "Asignada"
+SIN_ASIGNAR = "Sin Asignar"
+
+# Como se escribe cada estado en la columna Est_Seg de SharePoint (asi aparece en la lista)
+_EN_SP = {EXITOSA: "Exitosa", NO_EXITOSA: "No Exitosa", ESCALAMIENTO: "Escalamiento",
+          ASIGNADA: "Asignada", SIN_ASIGNAR: "Sin Asignar"}
+
+
+def a_sp(estado: str) -> str:
+    """Valor exacto para Est_Seg ('No exitosa' -> 'No Exitosa')."""
+    e = (estado or "").strip()
+    for k, v in _EN_SP.items():
+        if e.lower() == k.lower():
+            return v
+    return e
 
 
 def es_exitoso(intento: dict) -> bool:

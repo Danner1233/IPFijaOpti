@@ -80,10 +80,13 @@ const base = arguments[0], ruta = arguments[1], id = arguments[2], nombre = argu
 """
 
 
-# Escribe SOLO el estado (Est_Seg) de una solicitud, con control de ETag.
-JS_ESTADO = """
+# Escribe estado (Est_Seg) + causa + observacion de una solicitud, con control de ETag.
+# 'campos' ya trae los valores exactos; 'nota' se AGREGA al final de Observaciones (no borra lo que haya).
+# Si SharePoint rechaza la causa (columna de opciones con otro texto), se reintenta sin ella y la causa va en la nota.
+JS_ESTADO = r"""
 const cb = arguments[arguments.length - 1];
-const base = arguments[0], ruta = arguments[1], id = arguments[2], estado = arguments[3];
+const base = arguments[0], ruta = arguments[1], id = arguments[2], campos = arguments[3], nota = arguments[4],
+      colsCausa = arguments[5], textoCausa = arguments[6];
 (async () => {
   try {
     const h = {'Accept': 'application/json;odata=minimalmetadata'};
@@ -93,7 +96,44 @@ const base = arguments[0], ruta = arguments[1], id = arguments[2], estado = argu
     const g = await fetch(item, {headers: h, credentials: 'same-origin'});
     const j = await g.json();
     const etag = j['odata.etag'] || g.headers.get('ETag');
-    const r = await fetch(item, {method: 'POST', credentials: 'same-origin', body: JSON.stringify({Est_Seg: estado}), headers: {
+    const obsAntes = j.Observaciones || '';
+    const merge = (body) => fetch(item, {method: 'POST', credentials: 'same-origin', body: JSON.stringify(body), headers: {
+      'Accept': 'application/json;odata=nometadata', 'Content-Type': 'application/json;odata=nometadata',
+      'X-RequestDigest': digest, 'IF-MATCH': etag, 'X-HTTP-Method': 'MERGE'}});
+    const conNota = (b, n) => { if (n) b.Observaciones = obsAntes ? obsAntes + '\n' + n : n; return b; };
+    let r = await merge(conNota(Object.assign({}, campos), nota));
+    let sinCausa = false;
+    if (!r.ok && r.status !== 412 && colsCausa.length) {
+      const b = Object.assign({}, campos); colsCausa.forEach(c => delete b[c]);
+      r = await merge(conNota(b, (nota || '') + (textoCausa ? ' (causa: ' + textoCausa + ')' : '')));
+      sinCausa = r.ok;
+    }
+    cb({ok: r.ok, status: r.status, antes: j.Est_Seg || '', sin_causa: sinCausa,
+        motivo: r.ok ? '' : (r.status === 412 ? 'la solicitud cambio en SharePoint mientras tanto' : (await r.text()).slice(0, 200))});
+  } catch (e) { cb({ok: false, motivo: String(e)}); }
+})();
+"""
+
+# Devuelve la solicitud (Sin Asignar): solo si sigue asignada a MI nombre.
+JS_LIBERAR = r"""
+const cb = arguments[arguments.length - 1];
+const base = arguments[0], ruta = arguments[1], id = arguments[2], nombre = arguments[3];
+(async () => {
+  try {
+    const h = {'Accept': 'application/json;odata=minimalmetadata'};
+    const ci = await fetch(ruta + '/_api/contextinfo', {method: 'POST', headers: h, credentials: 'same-origin'});
+    const digest = (await ci.json()).FormDigestValue;
+    const item = base + '(' + id + ')';
+    const g = await fetch(item, {headers: h, credentials: 'same-origin'});
+    const j = await g.json();
+    const pem = String(j.PEM_ASIGNADO || '');
+    const plano = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    if (!pem || !plano(nombre).split(/\s+/).every(w => plano(pem).includes(w))) {
+      cb({ok: false, motivo: 'ya no esta asignada a usted (PEM: ' + pem + ')', antes: j.Est_Seg || ''}); return;
+    }
+    const etag = j['odata.etag'] || g.headers.get('ETag');
+    const r = await fetch(item, {method: 'POST', credentials: 'same-origin',
+      body: JSON.stringify({PEM_ASIGNADO: null, Est_Seg: 'Sin Asignar'}), headers: {
       'Accept': 'application/json;odata=nometadata', 'Content-Type': 'application/json;odata=nometadata',
       'X-RequestDigest': digest, 'IF-MATCH': etag, 'X-HTTP-Method': 'MERGE'}});
     cb({ok: r.ok, status: r.status, antes: j.Est_Seg || '', motivo: r.ok ? '' : (await r.text()).slice(0, 200)});
@@ -102,24 +142,73 @@ const base = arguments[0], ruta = arguments[1], id = arguments[2], estado = argu
 """
 
 
+def cambios_estado(estado, causa="", observacion="", pem="", ahora=None):
+    """(campos, nota, columnas_de_causa) para JS_ESTADO. La causa va en la columna de su estado y se limpia la del
+    otro estado; con Exitosa se limpian las dos. La nota (para Observaciones) solo si hay causa u observacion."""
+    from datetime import datetime
+    from hac_zac import causas, estados
+    est = estados.normalizar(estado) or estado
+    campos = {"Est_Seg": estados.a_sp(est)}
+    cols = []
+    if est in causas.COLUMNA or est == estados.EXITOSA:
+        for e, col in causas.COLUMNA.items():
+            campos[col] = (causa or None) if e == est else None
+            if e == est and causa:
+                cols.append(col)
+    nota = ""
+    if causa or (observacion or "").strip():
+        partes = [estados.a_sp(est)] + ([causa] if causa else [])
+        nota = "[%s] PEM %s: %s" % ((ahora or datetime.now()).strftime("%d/%m %H:%M"), pem or "-", " · ".join(partes))
+        if (observacion or "").strip():
+            nota += " — " + " ".join(observacion.split())
+    return campos, nota, cols
+
+
 def enviar_estados_pendientes(driver):
-    """Escribe en SharePoint el estado de las solicitudes ya documentadas. Devuelve cuantas escribio."""
+    """Escribe en SharePoint estado + causa + observacion de las solicitudes. Devuelve cuantas escribio."""
     n = 0
-    for id_, estado in cola.pendientes_sp().items():
+    for id_, p in cola.pendientes_sp_detalle().items():
         if cola.es_del_central(id_):
             continue                                  # su Est_Seg lo escribe el servidor central
+        estado = p["est_seg"]
+        campos, nota, cols = cambios_estado(estado, p.get("causa", ""), p.get("observacion", ""), p.get("pem", ""))
         try:
-            r = driver.execute_async_script(JS_ESTADO, BASE_ITEMS, RUTA_SITIO, id_, estado)
+            r = driver.execute_async_script(JS_ESTADO, BASE_ITEMS, RUTA_SITIO, id_, campos, nota, cols,
+                                            p.get("causa", ""))
         except Exception as e:
             r = {"ok": False, "motivo": str(e)}
         cola.resultado_sp(id_, r.get("ok"), r.get("motivo", ""))
-        cola.registrar_escritura_sp(id_, "Est_Seg", r.get("antes", ""), estado, r.get("ok"), r.get("motivo", ""))
+        cola.registrar_escritura_sp(id_, "Est_Seg", r.get("antes", ""), campos["Est_Seg"], r.get("ok"),
+                                    r.get("motivo", ""), causa=p.get("causa", ""), nota=nota,
+                                    causa_en_observacion=bool(r.get("sin_causa")))
         if r.get("ok"):
-            print("   solicitud %s: estado '%s' escrito en SharePoint" % (id_, estado))
+            print("   solicitud %s: '%s'%s escrito en SharePoint" % (
+                id_, campos["Est_Seg"], (" (" + p["causa"] + ")") if p.get("causa") else ""))
+            if r.get("sin_causa"):
+                _LOG.warning("SP %s: la columna de causa no acepto %r; quedo en Observaciones", id_, p.get("causa"))
             n += 1
         else:
             print("   no pude escribir el estado de la %s: %s" % (id_, r.get("motivo")))
             _LOG.error("estado SP %s -> %s fallo: %s", id_, estado, r.get("motivo"))
+    return n
+
+
+def enviar_liberaciones(driver):
+    """Solicitudes que el PEM devolvio: PEM_ASIGNADO vacio y Est_Seg = Sin Asignar."""
+    n = 0
+    for id_, p in cola.liberar_pendientes().items():
+        try:
+            r = driver.execute_async_script(JS_LIBERAR, BASE_ITEMS, RUTA_SITIO, id_, p.get("pem", ""))
+        except Exception as e:
+            r = {"ok": False, "motivo": str(e)}
+        cola.resultado_liberar(id_, r.get("ok"), r.get("motivo", ""))
+        cola.registrar_escritura_sp(id_, "PEM_ASIGNADO", p.get("pem", ""), "", r.get("ok"), r.get("motivo", ""),
+                                    est_seg="Sin Asignar")
+        if r.get("ok"):
+            print("   solicitud %s liberada (Sin Asignar)" % id_)
+            n += 1
+        else:
+            print("   no pude liberar la %s: %s" % (id_, r.get("motivo")))
     return n
 
 
@@ -235,7 +324,7 @@ def main():
         while True:
             try:
                 aplicar_visibilidad(d, "sp")
-                if enviar_estados_pendientes(d):
+                if enviar_estados_pendientes(d) + enviar_liberaciones(d):
                     time.sleep(1)
                 items = leer_items(d, a.debug)
                 if a.tomar or cola.auto_asignar_configurado():

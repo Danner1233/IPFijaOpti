@@ -180,6 +180,7 @@ class PanelCola(tk.Frame):
         P.BOTON(b, "Procesar", self._procesar, True, 11).pack(side="left")
         P.BOTON(b, "Marcar terminada", self._terminar, False, 16).pack(side="left", padx=6)
         P.BOTON(b, "Quitar de la cola", self._quitar, False, 15).pack(side="left")
+        P.BOTON(b, "Liberar (Sin Asignar)", self._liberar, False, 20).pack(side="left", padx=6)
         m, self.t = P._tabla(self, self.COLS, (80, 95, 200, 95, 75, 120, 120, 80, 95), alto=7)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("excedida", foreground=P.C["err"])
@@ -452,6 +453,31 @@ class PanelCola(tk.Frame):
         if s:
             cola.cambiar_estado(s["id"], "terminada")
             self.refrescar()
+
+    def _liberar(self):
+        """Devuelve la solicitud: en SharePoint queda sin PEM y en "Sin Asignar" para que otro la tome.
+        El lector no la vuelve a tomar para mi en las proximas horas."""
+        s = self._caso()
+        if not s:
+            return
+        if s["estado"] not in cola.ABIERTOS:
+            messagebox.showinfo("Liberar", "Solo se puede liberar una solicitud abierta (asignada o en proceso).")
+            return
+        if getattr(self, "ocupado", None) and self.ocupado() and s["estado"] == "en_proceso":
+            messagebox.showinfo("Liberar", "Hay un proceso corriendo con esta solicitud. Espere a que termine o "
+                                "cancélelo.")
+            return
+        nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
+        if not nombre:
+            messagebox.showinfo("Liberar", "Escriba su nombre (como en SharePoint) en Ajustes.")
+            return
+        if not messagebox.askyesno("Liberar solicitud", "La solicitud %s se devolverá: en SharePoint quedará sin "
+                                   "PEM y en «Sin Asignar» para que otro PEM la tome.\n\n¿Continuar?" % s["id"]):
+            return
+        cola.pedir_liberar(s["id"], nombre)
+        self.refrescar()
+        messagebox.showinfo("Liberar", "Listo. El lector de SharePoint la liberará en su próxima vuelta "
+                            "(el flujo debe estar iniciado).")
 
     def _quitar(self):
         s = self._caso()

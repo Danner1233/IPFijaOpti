@@ -110,6 +110,19 @@ la sesión del jump host, deja configurada la carpeta del equipo (la del instala
 **Actualizar a todos:** volver a armar el paquete y que cada uno ejecute `INSTALAR.bat` otra vez (con HAC ZAC
 cerrado). Se conservan ajustes, claves, cola, historial y fotos.
 
+## Estado, causa y observación en SharePoint
+Al **Documentar** (y al cambiar el estado desde la plantilla o el Historial) sale "Resultado de la solicitud":
+Exitosa / No exitosa / Escalamiento. Para No exitosa y Escalamiento hay que elegir la **causa** (solo las de la red
+de la solicitud —ATP, ONNET o Claro— y las generales); se ve quién notifica, quién escala y la acción, y la
+**observación** se llena con la acción (editable). Se escribe en SharePoint: `Est_Seg` (valor exacto, p. ej.
+"No Exitosa"), la causa en "Causa No Exitosa" o "Causa Escalamiento" (y se limpia la otra) y la observación se
+**agrega** al final de "Observaciones" (`[dd/mm hh:mm] PEM <nombre>: <estado> · <causa> — <observación>`).
+Si SharePoint no acepta el texto de la causa, se guarda el estado y la causa queda en la observación.
+Ya no se escribe "No exitosa" por defecto si no hay un estado confirmado.
+
+**Liberar (Sin Asignar):** botón en la Cola. Quita su nombre de PEM_ASIGNADO y deja Est_Seg en "Sin Asignar" (solo
+si sigue asignada a usted); el lector no la vuelve a tomar para usted en 3 horas. Catálogo: `hac_zac/causas.py`.
+
 ## Pruebas
     python -m unittest discover -s tests -v
 Usan una carpeta temporal (`HAC_ZAC_DATOS`); no tocan datos reales.

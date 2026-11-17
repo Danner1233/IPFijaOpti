@@ -220,11 +220,63 @@ MAX_INTENTOS_SP = 3
 
 
 @bloqueado
-def pedir_estado_sp(id_, estado):
-    """Anota que la solicitud `id_` ya esta documentada y que SharePoint debe quedar en `estado`."""
+def pedir_estado_sp(id_, estado, causa="", observacion="", pem=""):
+    """Anota que SharePoint debe quedar en `estado` (y su causa / observacion del PEM, si hay).
+    La escribe el lector de SharePoint (sp_lector.enviar_estados_pendientes)."""
     datos = _leer(SP_PENDIENTES, {})
-    datos[str(id_)] = {"est_seg": estado, "ok": False, "intentos": 0, "pedido": _ahora(), "error": ""}
+    datos[str(id_)] = {"est_seg": estado, "causa": causa or "", "observacion": (observacion or "").strip(),
+                       "pem": pem or "", "ok": False, "intentos": 0, "pedido": _ahora(), "error": ""}
     _escribir(SP_PENDIENTES, datos)
+
+
+def pendientes_sp_detalle():
+    """{id: {est_seg, causa, observacion, pem}} de lo que falta escribir en SharePoint."""
+    return {i: v for i, v in estados_sp().items() if not v.get("ok") and v.get("intentos", 0) < MAX_INTENTOS_SP}
+
+
+# ---- liberar: devolver una solicitud (Sin Asignar) sin volver a tomarla enseguida
+LIBERAR = "sp_liberar.json"
+NO_RETOMAR_H = 3
+
+
+@bloqueado
+def pedir_liberar(id_, nombre):
+    """El PEM devuelve la solicitud: el lector de SharePoint quita su nombre y deja Est_Seg en Sin Asignar."""
+    datos = _leer(LIBERAR, {})
+    datos[str(id_)] = {"pem": nombre, "ok": False, "intentos": 0, "pedido": _ahora(), "error": ""}
+    _escribir(LIBERAR, datos)
+    c = _cola()
+    for s in c["solicitudes"]:
+        if s["id"] == str(id_):
+            s["estado"] = "liberada"
+    _escribir("cola.json", c)
+
+
+def liberar_pendientes():
+    return {i: v for i, v in _leer(LIBERAR, {}).items() if not v.get("ok") and v.get("intentos", 0) < MAX_INTENTOS_SP}
+
+
+@bloqueado
+def resultado_liberar(id_, ok, error=""):
+    datos = _leer(LIBERAR, {})
+    v = datos.get(str(id_))
+    if v:
+        v["ok"], v["error"] = bool(ok), "" if ok else str(error)[:200]
+        if ok:
+            v["liberada_en"] = _ahora()
+        else:
+            v["intentos"] = v.get("intentos", 0) + 1
+        _escribir(LIBERAR, datos)
+
+
+def liberadas_recientes(horas=NO_RETOMAR_H):
+    """Ids que YO libere hace poco: no se vuelven a tomar (si no, el lector la retomaria enseguida)."""
+    out = set()
+    for i, v in _leer(LIBERAR, {}).items():
+        t = _a_local(v.get("pedido"))
+        if t and (datetime.now() - t).total_seconds() < horas * 3600:
+            out.add(i)
+    return out
 
 
 def estados_sp():
@@ -327,8 +379,10 @@ def es_apoyo(v):
 
 
 def elegir_libre(items):
-    """La solicitud libre mas antigua (PEM_ASIGNADO vacio). Devuelve el item crudo o None."""
-    libres = [it for it in items if es_libre(it)]
+    """La solicitud libre mas antigua (PEM_ASIGNADO vacio). Devuelve el item crudo o None.
+    No vuelve a tomar las que YO libere hace poco."""
+    mias = liberadas_recientes()
+    libres = [it for it in items if es_libre(it) and str(it.get("ID")) not in mias]
     return min(libres, key=lambda i: str(i.get("Created") or ""), default=None)
 
 

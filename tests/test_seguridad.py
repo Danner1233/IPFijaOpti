@@ -84,7 +84,7 @@ class PruebasAuditoriaSP(unittest.TestCase):
 
     def test_estado_que_quedara_en_sharepoint(self):
         self.assertEqual(Servicio.estado_sp_de({"id": "7", "resultado": "exitosa"}), ("7", "Exitosa"))
-        self.assertEqual(Servicio.estado_sp_de({"id": "8"})[1], "No exitosa")
+        self.assertIsNone(Servicio.estado_sp_de({"id": "8"}), "sin estado confirmado no se escribe nada (caso 64849)")
         self.assertIsNone(Servicio.estado_sp_de({}))
 
 

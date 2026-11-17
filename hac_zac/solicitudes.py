@@ -101,7 +101,7 @@ class SolicitudStore:
             except Exception:
                 continue
             resumen = {k: d.get(k, "") for k in ("key", "id", "rr", "cliente", "red", "capa2", "estado",
-                                                 "resultado", "creada", "actualizada", "documentada_en")}
+                                                 "resultado", "creada", "actualizada", "documentada_en", "causa")}
             if not isinstance(resumen["resultado"], str):      # formato anterior: 'resultado' era el dict de la operación
                 resumen["resultado"] = ""
             from .estados import normalizar
