@@ -18,7 +18,7 @@ from .rutas import data_dir
 from .segmentos import segmento_de_ip
 from .solicitudes import SolicitudStore
 
-AJUSTES_DEFECTO = {"configurador": "DANNER ARIAS", "carpeta_plantillas": "", "formato_carpeta": "%m-%d", "pem_nombre": "", "auto_asignar": True, "securecrt_exe": "", "servidor_central": "", "carpeta_equipo": "", "subcarpeta_dia": True, "modo_avanzado": False,
+AJUSTES_DEFECTO = {"configurador": "DANNER ARIAS", "carpeta_plantillas": "", "formato_carpeta": "%m-%d", "pem_nombre": "", "auto_asignar": True, "securecrt_exe": "", "sesion_crt": "", "servidor_central": "", "carpeta_equipo": "", "subcarpeta_dia": True, "modo_avanzado": False,
                     "auto_procesar": False, "flujo_al_abrir": False, "ver_sp": True, "ver_correo": True, "ver_portal": True}
 
 

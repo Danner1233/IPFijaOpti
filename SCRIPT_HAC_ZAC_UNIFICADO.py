@@ -642,6 +642,23 @@ def _linea_actual():
         return ""
 
 
+def esperar_jump_host(maximo_s=180):
+    """Si SecureCRT se abrio con el lanzador (/S sesion /SCRIPT), la sesion puede estar conectando o pidiendo la
+    clave: se espera hasta ver un prompt (termina en $ # > o ]). Mientras tanto el usuario puede escribir.
+    Devuelve True si quedo en el prompt."""
+    fin = time.time() + maximo_s
+    while time.time() < fin:
+        try:
+            if crt.Session.Connected:
+                linea = _linea_actual()
+                if linea and linea[-1:] in ("$", "#", ">", "]") and "assword" not in linea:
+                    return True
+        except Exception:
+            pass
+        crt.Sleep(1000)
+    return False
+
+
 def recordar_jump_host():
     """Al arrancar la sesion esta en el jump host: se guarda su prompt para poder volver."""
     if JUMP_PROMPT[0] is None:
@@ -2260,6 +2277,9 @@ def main():
         crt.Dialog.MessageBox("La interfaz se cerro al iniciar:\n\n{}".format(err))
         return
 
+    if not esperar_jump_host():
+        UI.log("ATENCION: la pestana de SecureCRT no esta conectada al jump host. Conectela antes de iniciar "
+               "una solicitud.", "warn")
     recordar_jump_host()
 
     while True:

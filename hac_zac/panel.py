@@ -1086,7 +1086,10 @@ class PanelAjustes(tk.Frame):
         self.caja_avz = tk.Frame(self, bg=C["bg"])
         self._padre_bloque = self.caja_avz
         self._bloque("Mi nombre en SharePoint", "Tal como aparece en PEM_ASIGNADO.", (("pem_nombre", "Nombre", False),))
-        self._bloque("Ruta de SecureCRT", "SecureCRT.exe, para abrirlo solo desde la Cola.", (("securecrt_exe", "Ruta", False),))
+        self._bloque("Ruta de SecureCRT", "SecureCRT.exe (o SecureCRTPortable.exe): lo usa INICIAR_HAC_ZAC.bat y la Cola.",
+                     (("securecrt_exe", "Ruta", False),))
+        self._bloque("Sesión del jump host", "Nombre de la sesión guardada en SecureCRT (ej. HENDRIX_DEMIMASTER). "
+                     "INICIAR_HAC_ZAC.bat la abre y corre el script solo.", (("sesion_crt", "Sesión", False),))
         self._bloque("Reparto central", "Dirección del servidor central (ej. http://PC-OFICINA:8765) y su token personal "
                      "(se lo da el administrador). Con esto ya no usa SharePoint: reabra la aplicación al guardar.",
                      (("servidor_central", "Dirección", False), ("central_clave", "Token", True)))
@@ -1228,6 +1231,7 @@ class PanelAjustes(tk.Frame):
         aj = self.sv.ajustes if self.sv else {}
         datos["pem_nombre"] = aj.get("pem_nombre", "")
         datos["securecrt_exe"] = aj.get("securecrt_exe", "")
+        datos["sesion_crt"] = aj.get("sesion_crt", "")
         datos["servidor_central"] = aj.get("servidor_central", "")
         datos["carpeta_equipo"] = aj.get("carpeta_equipo", "")
         self.auto.set(bool(aj.get("auto_asignar", False)))
@@ -1253,6 +1257,7 @@ class PanelAjustes(tk.Frame):
                 self.sv.ajustes["subcarpeta_dia"] = bool(self.sub.get())
                 self.sv.ajustes["pem_nombre"] = self.campos["pem_nombre"].get().strip()
                 self.sv.ajustes["securecrt_exe"] = self.campos["securecrt_exe"].get().strip()
+                self.sv.ajustes["sesion_crt"] = self.campos["sesion_crt"].get().strip()
                 self.sv.ajustes["servidor_central"] = self.campos["servidor_central"].get().strip()
                 self.sv.ajustes["carpeta_equipo"] = self.campos["carpeta_equipo"].get().strip()
                 self.sv.ajustes["auto_asignar"] = bool(self.auto.get())
