@@ -352,10 +352,11 @@ class PanelCola(tk.Frame):
         rec = self.sv.store.cargar(s["id"]) or {}
         base = dict(rec, txt_sol=rec.get("txt_sol") or s["datos"].get("txt_sol", ""),
                     propiedad_red=s["datos"].get("propiedad_red", ""))
-        if s["estado"] not in cola.ABIERTOS and not rec.get("documentada_en"):
+        hecha = rec.get("documentada_en") or rec.get("cerrada_en")
+        if s["estado"] not in cola.ABIERTOS and not hecha:
             return "—", False
         m = tiempos.medir(base, s)
-        return tiempos.texto(m), m["excedido"] and not rec.get("documentada_en")
+        return tiempos.texto(m), m["excedido"] and not hecha
 
     def refrescar(self):
         if not self.winfo_exists():

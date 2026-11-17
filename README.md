@@ -111,7 +111,7 @@ la sesión del jump host, deja configurada la carpeta del equipo (la del instala
 cerrado). Se conservan ajustes, claves, cola, historial y fotos.
 
 ## Estado, causa y observación en SharePoint
-Al **Documentar** (y al cambiar el estado desde la plantilla o el Historial) sale "Resultado de la solicitud":
+Al **Documentar** (y al cambiar el estado desde la plantilla o el Historial) sale "Resultado de la solicitud". **Exitosa** sigue a Forms; **No exitosa y Escalamiento NO van a Forms**: se cierra la solicitud y se envía a SharePoint:
 Exitosa / No exitosa / Escalamiento. Para No exitosa y Escalamiento hay que elegir la **causa** (solo las de la red
 de la solicitud —ATP, ONNET o Claro— y las generales); se ve quién notifica, quién escala y la acción, y la
 **observación** se llena con la acción (editable). Se escribe en SharePoint: `Est_Seg` (valor exacto, p. ej.

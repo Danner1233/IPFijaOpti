@@ -70,10 +70,11 @@ def medir(rec, sol_cola=None, ahora=None):
     red = red_de(rec)
     lim = limite_min(red)
     ini = inicio_de(rec, sol_cola)
-    fin = _dt(rec.get("documentada_en")) or ahora or datetime.now()
+    cierre = rec.get("documentada_en") or rec.get("cerrada_en")
+    fin = _dt(cierre) or ahora or datetime.now()
     minutos = max(0.0, (fin - ini).total_seconds() / 60.0) if ini else 0.0
     return {"red": red, "limite": lim, "inicio": ini, "minutos": minutos, "excedido": bool(ini) and minutos > lim,
-            "fin": fin if rec.get("documentada_en") else None}
+            "fin": fin if cierre else None}
 
 
 def texto(m):

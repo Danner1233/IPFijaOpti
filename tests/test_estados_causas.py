@@ -121,5 +121,47 @@ class PruebasEnvio(unittest.TestCase):
         self.assertFalse(cola.leer_registro_sp()[-1]["ok"])
 
 
+class PruebasCierreSinForms(unittest.TestCase):
+    """No exitosa / Escalamiento no van a Forms: se cierran y se envian a SharePoint."""
+
+    def setUp(self):
+        self.env = mock.patch.dict(os.environ, {"HAC_ZAC_DATOS": tempfile.mkdtemp(prefix="hz_cie_")})
+        self.env.start()
+        from hac_zac.servicio import Servicio
+        self.sv = Servicio()
+        self.sv.store.guardar({"id": "70030", "rr": "1", "creada": "2026-11-17T16:00:00"})
+        cola.registrar_mia({"id": "70030", "rr": "1"}, "Ana")
+
+    def tearDown(self):
+        self.env.stop()
+
+    def test_cerrar_no_exitosa(self):
+        self.sv.aplicar_resultado("70030", "No exitosa", "Solicitud Duplicada", "obs")
+        self.assertEqual(cola.pendientes_sp_detalle(), {}, "aplicar solo no envia (aun abierta)")
+        rec = self.sv.cerrar_sin_forms("70030")
+        self.assertTrue(rec["cerrada_en"])
+        self.assertEqual(rec["estado"], "Cerrada en SharePoint")
+        p = cola.pendientes_sp_detalle()["70030"]
+        self.assertEqual((p["est_seg"], p["causa"], p["observacion"]), ("No exitosa", "Solicitud Duplicada", "obs"))
+        self.assertEqual(cola.solicitudes()[0]["estado"], "terminada", "queda libre para tomar otra")
+
+    def test_exitosa_no_se_cierra_sin_forms(self):
+        self.sv.aplicar_resultado("70030", "Exitosa")
+        self.assertIsNone(self.sv.cerrar_sin_forms("70030"))
+
+    def test_cambio_despues_de_cerrada_se_reenvia(self):
+        self.sv.aplicar_resultado("70030", "Escalamiento", "Falla Gestor ACS Friendly", "")
+        self.sv.cerrar_sin_forms("70030")
+        cola.resultado_sp("70030", True)
+        self.sv.aplicar_resultado("70030", "No exitosa", "Cliente no puede esperar", "cambio")
+        self.assertEqual(cola.pendientes_sp_detalle()["70030"]["causa"], "Cliente no puede esperar")
+
+    def test_el_tiempo_para_al_cerrar(self):
+        from hac_zac import tiempos
+        rec = {"creada": "2026-11-17T16:00:00", "cerrada_en": "2026-11-17T16:10:00"}
+        m = tiempos.medir(rec, None, datetime(2026, 11, 17, 18, 0))
+        self.assertEqual(int(m["minutos"]), 10)
+
+
 if __name__ == "__main__":
     unittest.main()

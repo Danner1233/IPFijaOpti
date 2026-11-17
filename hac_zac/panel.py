@@ -400,7 +400,7 @@ class PanelPlantilla(tk.Frame):
         try:
             if self.rec:
                 m = self.medir_tiempo()
-                doc = bool(self.rec.get("documentada_en"))
+                doc = bool(self.rec.get("documentada_en") or self.rec.get("cerrada_en"))
                 color = C["err"] if m["excedido"] else (C["warn"] if m["minutos"] > m["limite"] * 0.8 else C["ok"])
                 self.lbl_tiempo.config(text="⏱ %s  · red %s%s" % (tiempos.texto(m), m["red"],
                                                                    "  · documentada" if doc else ""),
@@ -486,10 +486,33 @@ class PanelPlantilla(tk.Frame):
         if rec:
             self.rec = rec
             self.pill.config(text="  %s  ▾  " % r["estado"], fg=C[COLOR_RES.get(r["estado"], "mut")])
-            if rec.get("documentada_en"):
+            if rec.get("documentada_en") or rec.get("cerrada_en"):
                 self.lbl_est.config(text="Estado actualizado; se escribirá en SharePoint.")
+            elif r["estado"] in (estados.NO_EXITOSA, estados.ESCALAMIENTO):
+                self._cerrar_sin_forms()           # no va a Forms: se cierra y se envia a SharePoint
             if self.al_cambiar:
                 self.al_cambiar()
+
+    def _cerrar_sin_forms(self, preguntar=True):
+        """No exitosa / Escalamiento: se cierra la solicitud y se envia a SharePoint (sin Forms)."""
+        if not self._justificar_si_hace_falta():
+            return False
+        rec = self.sv.store.cargar(self.rec["key"]) or self.rec
+        est, causa = rec.get("resultado"), rec.get("causa") or ""
+        if preguntar and not messagebox.askokcancel(
+                "Cerrar solicitud", "La solicitud %s quedará en SharePoint como «%s»%s, con su observación.\n\n"
+                "No se documenta en Microsoft Forms. ¿Continuar?" % (
+                    rec.get("id") or rec.get("key"), estados.a_sp(est), (" · " + causa) if causa else "")):
+            return False
+        rec = self.sv.cerrar_sin_forms(self.rec["key"])
+        if rec:
+            self.rec = rec
+            self._pill_doc()
+            self.lbl_est.config(text="Cerrada como %s: se escribe en SharePoint en la próxima vuelta del lector "
+                                     "(flujo iniciado)." % estados.a_sp(est))
+            if self.al_cambiar:
+                self.al_cambiar()
+        return bool(rec)
 
     def _confirmar_resultado(self):
         """Al documentar: confirmar estado + causa + observacion (obligatorio). False si cancela."""
@@ -508,7 +531,9 @@ class PanelPlantilla(tk.Frame):
             hoy = doc.documentada_hoy(d)
         except Exception:
             hoy = False
-        if r.get("documentada_en") or hoy:
+        if r.get("cerrada_en") and not r.get("documentada_en"):
+            self.pill_doc.config(text="  ✓ CERRADA EN SHAREPOINT (sin Forms)  ", fg=C["ok"])
+        elif r.get("documentada_en") or hoy:
             self.pill_doc.config(text="  ✓ DOCUMENTADA  ", fg=C["ok"])
         else:
             self.pill_doc.config(text="  ○ Pendiente de documentar  ", fg=C["warn"])
@@ -697,7 +722,14 @@ class PanelPlantilla(tk.Frame):
             self.lbl_est.config(text="Caso %s agregado al .txt" % n.strip())
 
     def _documentar(self):
+        """Primero el resultado. Exitosa -> Microsoft Forms (y luego SharePoint). No exitosa / Escalamiento -> NO se
+        documenta en Forms: se cierra y se escribe en SharePoint (estado, causa y observacion)."""
         if not self.rec:
+            return
+        if not self._confirmar_resultado():
+            return
+        if estados.normalizar(self.rec.get("resultado") or "") in (estados.NO_EXITOSA, estados.ESCALAMIENTO):
+            self._cerrar_sin_forms()
             return
         texto = self._texto()
         d, faltan, hoy = self.sv.revisar_documentacion(texto)
@@ -705,8 +737,6 @@ class PanelPlantilla(tk.Frame):
             messagebox.showwarning("Faltan datos para documentar", "Faltan: %s.\n\nComplete la plantilla (ID de "
                                    "solicitud, regional, actividad, IP asignada…) y vuelva a pulsar Documentar." %
                                    ", ".join(doc.ETIQUETAS.get(k, k) for k in faltan))
-            return
-        if not self._confirmar_resultado():
             return
         if not self._justificar_si_hace_falta():
             return
@@ -1022,6 +1052,8 @@ class PanelHistorial(tk.Frame):
 
     @staticmethod
     def _doc_texto(r):
+        if r.get("cerrada_en") and not r.get("documentada_en"):
+            return "✓ Cerrada en SP " + r["cerrada_en"][5:16].replace("T", " ")
         d = r.get("documentada_en") or ""
         return ("✓ Documentada " + d[5:16].replace("T", " ")) if d else "○ No documentada"
 
@@ -1035,9 +1067,9 @@ class PanelHistorial(tk.Frame):
         f = self.cb_f.get()
         regs = self.sv.listar(self.q.get())
         if f == "No documentadas":
-            regs = [r for r in regs if not r.get("documentada_en")]
+            regs = [r for r in regs if not (r.get("documentada_en") or r.get("cerrada_en"))]
         elif f == "Documentadas":
-            regs = [r for r in regs if r.get("documentada_en")]
+            regs = [r for r in regs if r.get("documentada_en") or r.get("cerrada_en")]
         elif f == "Sin guardar":
             regs = [r for r in regs if r.get("guardada") is False]
         elif f == "Tiempo superado":
@@ -1049,13 +1081,13 @@ class PanelHistorial(tk.Frame):
         for i in self.t.get_children():
             self.t.delete(i)
         for r in self.regs:
-            self.t.insert("", "end", iid=r["key"], tags=("doc" if r.get("documentada_en") else "pend",), values=(
+            self.t.insert("", "end", iid=r["key"], tags=("doc" if (r.get("documentada_en") or r.get("cerrada_en")) else "pend",), values=(
                 r.get("id") or "—", r.get("rr"), r.get("cliente"), r.get("red"), r.get("capa2"),
                 estados.normalizar(r.get("resultado")) or "—", r.get("estado"), r.get("causa") or "—", self._guardada_texto(r),
                 r.get("tiempo", "—"), self._doc_texto(r), (r.get("actualizada") or "")[5:16].replace("T", " ")))
         if sel and self.t.exists(sel):
             self.t.selection_set(sel)
-        pend = sum(1 for r in self.regs if not r.get("documentada_en"))
+        pend = sum(1 for r in self.regs if not (r.get("documentada_en") or r.get("cerrada_en")))
         sin_guardar = sum(1 for r in self.regs if r.get("guardada") is False)
         self.lbl.config(text="%d solicitud(es) · %d sin documentar · %d sin guardar" % (len(self.regs), pend,
                                                                                          sin_guardar))
@@ -1085,7 +1117,11 @@ class PanelHistorial(tk.Frame):
             return
         r = DialogoResultado(self, rec).resultado
         if r:
-            self.sv.aplicar_resultado(k, r["estado"], r["causa"], r["observacion"])
+            rec = self.sv.aplicar_resultado(k, r["estado"], r["causa"], r["observacion"])
+            if rec and r["estado"] in (estados.NO_EXITOSA, estados.ESCALAMIENTO) and not (
+                    rec.get("documentada_en") or rec.get("cerrada_en")):
+                if self._abrir():                     # se cierra desde su plantilla (con la demora si aplica)
+                    self.winfo_toplevel().v_res._cerrar_sin_forms()
             self.refrescar()
 
     def _ips_libres(self):

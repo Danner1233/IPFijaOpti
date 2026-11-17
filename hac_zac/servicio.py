@@ -35,9 +35,16 @@ def guardar_ajustes(ajustes: dict) -> None:
     (data_dir() / "ajustes.json").write_text(json.dumps(ajustes, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def cerrada(rec: dict) -> bool:
+    """Terminada: documentada en Forms (Exitosa) o cerrada en SharePoint sin Forms (No exitosa / Escalamiento)."""
+    return bool((rec or {}).get("documentada_en") or (rec or {}).get("cerrada_en"))
+
+
 def estado_texto(rec: dict) -> str:
     if rec.get("documentada_en"):
         return "Documentada"
+    if rec.get("cerrada_en"):
+        return "Cerrada en SharePoint"
     if rec.get("archivo"):
         return "Guardada"
     if (rec.get("preview") or "").strip():
@@ -233,9 +240,21 @@ class Servicio:
             causa = ""
         rec = self.actualizar(key, resultado=estado, resultado_manual=estado, causa=causa,
                               observacion=(observacion or "").strip())
-        if rec and rec.get("documentada_en"):
+        if rec and cerrada(rec):
             self._pedir_estado_sp(rec)
         return rec
+
+    def cerrar_sin_forms(self, key: str):
+        """No exitosa / Escalamiento: no se documentan en Forms. Se cierra la solicitud y se envia a SharePoint
+        su estado, causa y observacion (y queda libre para tomar otra)."""
+        rec = self.store.cargar(key)
+        if not rec or estados.normalizar(rec.get("resultado") or "") not in (estados.NO_EXITOSA, estados.ESCALAMIENTO):
+            return None
+        rec["cerrada_en"] = datetime.now().isoformat(timespec="seconds")
+        rec["estado"] = estado_texto(rec)
+        self.store.guardar(rec)
+        self._pedir_estado_sp(rec)
+        return self.store.cargar(key)
 
     # ------------------------------------------------------------------ consulta
     def listar(self, filtro: str = ""):
