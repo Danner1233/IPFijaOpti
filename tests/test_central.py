@@ -165,5 +165,21 @@ class PruebasCambiosConElCentralAbierto(unittest.TestCase):
             self.assertTrue(abierto.estado["pems"]["Ana Uno"]["latido"], "conserva lo de memoria (latido)")
 
 
+class PruebasUnSoloCentral(unittest.TestCase):
+    def test_detecta_central_abierto_y_no_deja_dos_en_el_mismo_puerto(self):
+        c = S.Central(tempfile.mkdtemp())
+        srv = S.crear_servidor(c, puerto=0, host="127.0.0.1")
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        puerto = srv.server_address[1]
+        try:
+            self.assertTrue(S.ya_hay_central(puerto))
+            with self.assertRaises(OSError):
+                S.crear_servidor(S.Central(tempfile.mkdtemp()), puerto=puerto, host="127.0.0.1")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertFalse(S.ya_hay_central(puerto, timeout=1))
+
+
 if __name__ == "__main__":
     unittest.main()

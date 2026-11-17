@@ -298,6 +298,28 @@ def hilo_correo(central, ver=False, cada=60, debug=False, parar=None):
         d.quit()
 
 
+def ya_hay_central(puerto=PUERTO, timeout=2):
+    """True si en este PC ya responde un servidor central en ese puerto (no se debe abrir otro)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/salud" % puerto, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8")).get("servicio") == "hac_zac_central"
+    except Exception:
+        return False
+
+
+class _ServidorExclusivo(ThreadingHTTPServer):
+    """En Windows, SO_REUSEADDR deja que DOS programas escuchen el mismo puerto (y el viejo se queda con los
+    pedidos). Se pide el puerto en exclusiva."""
+    allow_reuse_address = False
+
+    def server_bind(self):
+        import socket
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def crear_servidor(central, puerto=PUERTO, host="0.0.0.0"):
     class Manejador(BaseHTTPRequestHandler):
         server_version = "HacZacCentral/1"
@@ -390,7 +412,7 @@ def crear_servidor(central, puerto=PUERTO, host="0.0.0.0"):
                 codigo, datos = 500, {"ok": False, "error": "error interno: %s" % e}
             return self._responder(codigo, datos)
 
-    srv = ThreadingHTTPServer((host, puerto), Manejador)
+    srv = _ServidorExclusivo((host, puerto), Manejador)
     srv.daemon_threads = True
     return srv
 
@@ -511,6 +533,9 @@ def main():
     if not central.estado["pems"]:
         sys.exit('No hay PEM registrados. Agregue cada uno con:  python servidor_central.py --agregar "Nombre Apellido"')
 
+    if ya_hay_central(a.puerto):
+        sys.exit("Ya hay un servidor central ABIERTO en este PC (puerto %d). No abra otro: use ese, o cierrelo con "
+                 "Ctrl+C en su ventana y vuelva a abrir este." % a.puerto)
     _preparar_agente(central, carpeta, a.whatsapp_simulado)
     parar_envios = threading.Event()
     threading.Thread(target=central.hilo_envios, args=(parar_envios,), daemon=True, name="envios").start()
