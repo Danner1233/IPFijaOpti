@@ -51,7 +51,8 @@ class PruebasComando(unittest.TestCase):
 def _funciones(*nombres, crt=None):
     with io.open(os.path.join(RAIZ, "SCRIPT_HAC_ZAC_UNIFICADO.py"), encoding="utf-8") as f:
         arbol = ast.parse(f.read())
-    nodos = [n for n in arbol.body if isinstance(n, ast.FunctionDef) and n.name in nombres]
+    nodos = [n for n in arbol.body if (isinstance(n, ast.FunctionDef) and n.name in nombres) or
+             (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "_PIDE_DATOS")]
     espacio = {"crt": crt, "time": time}
     exec(compile(ast.Module(body=nodos, type_ignores=[]), "script", "exec"), espacio)
     return espacio

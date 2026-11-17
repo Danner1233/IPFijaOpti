@@ -209,7 +209,7 @@ class Ui(object):
         ultimo = time.time()
         while True:
             if time.time() - ultimo >= MANTENER_VIVA_S:
-                mantener_sesion(self.log)
+                mantener_sesion(self.log, abortar=lambda: os.path.exists(ruta))
                 ultimo = time.time()
             if os.path.exists(ruta):
                 datos = _leer_json(ruta)
@@ -650,47 +650,64 @@ def _linea_actual():
 MANTENER_VIVA_S = 240      # cada 4 min, SOLO mientras se espera una solicitud
 
 
-def mantener_sesion(log=None):
+def mantener_sesion(log=None, abortar=None):
     """Que la sesion del jump host no se cierre nunca:
-    * si se cayo, la reconecta (con la clave guardada en la sesion) y espera el prompt;
-    * si esta conectada, envia un Enter en el prompt: el jump host no la cierra por inactividad.
-    Solo se llama entre procesos (esperando solicitud), nunca en medio de una configuracion.
-    Devuelve 'ok', 'reconectada' o 'sin_conexion'. Nunca lanza error."""
+    * si esta conectada, envia un Enter en el prompt: el jump host no la cierra por inactividad;
+    * si se cayo, la reconecta UNA vez (con la clave guardada) y espera, como mucho 45 s, a que quede lista.
+    Solo se llama entre procesos (esperando solicitud). Si llega una solicitud (abortar() -> True) deja de esperar
+    para atenderla. Devuelve 'ok', 'reconectada', 'interrumpida' o 'sin_conexion'. Nunca lanza error."""
     try:
         if crt.Session.Connected:
             crt.Screen.Send("\r")
             return "ok"
     except Exception:
         return "sin_conexion"
-    for intento in range(3):
+    try:
         try:
-            try:
-                crt.Session.Connect()
-            except Exception:
-                crt.Session.Connect('/S "%s"' % crt.Session.Path)
+            crt.Session.Connect()
         except Exception:
-            crt.Sleep(5000)
-            continue
-        if esperar_jump_host(120):
-            if log:
-                log("La sesion del jump host se habia cerrado: reconectada.", "warn")
-            return "reconectada"
+            crt.Session.Connect('/S "%s"' % crt.Session.Path)
+    except Exception:
+        pass
+    if esperar_jump_host(45, abortar):
+        if log:
+            log("La sesion del jump host se habia cerrado: reconectada.", "warn")
+        return "reconectada"
+    if abortar and abortar():
+        return "interrumpida"
     if log:
-        log("ATENCION: la sesion del jump host se cerro y no se pudo reconectar. Reconectela en SecureCRT.", "warn")
+        log("ATENCION: la sesion del jump host esta desconectada. Reconectela en SecureCRT.", "warn")
     return "sin_conexion"
 
 
-def esperar_jump_host(maximo_s=180):
-    """Si SecureCRT se abrio con el lanzador (/S sesion /SCRIPT), la sesion puede estar conectando o pidiendo la
-    clave: se espera hasta ver un prompt (termina en $ # > o ]). Mientras tanto el usuario puede escribir.
-    Devuelve True si quedo en el prompt."""
+_PIDE_DATOS = ("assword", "login:", "username", "usuario:", "passcode", "(yes/no")
+
+
+def esperar_jump_host(maximo_s=180, abortar=None):
+    """Espera a que la sesion quede LISTA: conectada y en una linea que no pide usuario/clave. Se reconoce el prompt
+    por su forma ($ # > ] al final) o porque la pantalla se queda quieta 2 s (cualquier prompt). Mientras tanto el
+    usuario puede escribir la clave. Si abortar() devuelve True (llego una solicitud), deja de esperar.
+    Devuelve True si quedo lista."""
     fin = time.time() + maximo_s
+    ultima, quieta = None, 0
     while time.time() < fin:
+        if abortar:
+            try:
+                if abortar():
+                    return False
+            except Exception:
+                pass
         try:
             if crt.Session.Connected:
                 linea = _linea_actual()
-                if linea and linea[-1:] in ("$", "#", ">", "]") and "assword" not in linea:
-                    return True
+                baja = linea.lower()
+                if linea and not any(p in baja for p in _PIDE_DATOS):
+                    if linea[-1:] in ("$", "#", ">", "]", "%", ":"):
+                        return True
+                    quieta = quieta + 1 if linea == ultima else 0
+                    if quieta >= 2:
+                        return True
+                ultima = linea
         except Exception:
             pass
         crt.Sleep(1000)
@@ -2325,7 +2342,7 @@ def main():
         crt.Dialog.MessageBox("La interfaz se cerro al iniciar:\n\n{}".format(err))
         return
 
-    if not esperar_jump_host():
+    if not esperar_jump_host(abortar=lambda: os.path.exists(UI._ruta("solicitud.json"))):
         UI.log("ATENCION: la pestana de SecureCRT no esta conectada al jump host. Conectela antes de iniciar "
                "una solicitud.", "warn")
     recordar_jump_host()
