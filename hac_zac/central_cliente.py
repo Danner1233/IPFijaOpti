@@ -60,12 +60,25 @@ def aplicar_respuesta(resp):
     Devuelve los ids nuevos."""
     nombre = resp.get("pem") or ""
     nuevos = []
+    con_plantilla = {s["id"] for s in cola.solicitudes() if s.get("plantilla")}
     for d in resp.get("casos") or []:
-        if d.get("id") and cola.registrar_desde_central(d, nombre):
+        d = dict(d)
+        correo = d.pop("_correo", None)
+        if not d.get("id"):
+            continue
+        if cola.registrar_desde_central(d, nombre):
             nuevos.append(str(d["id"]))
+        if correo and str(d["id"]) not in con_plantilla:
+            # el central ya confirmo que el correo trae ESTE SOLICITUD ID: se une por ID
+            cola.registrar_correo(correo.get("texto", ""), recibido=correo.get("recibido") or None)
     for i in resp.get("confirmadas") or []:
         cola.resultado_sp(str(i), True, "")
     return nuevos
+
+
+def plantillas_listas():
+    """Ids de mis casos del central que ya tienen la plantilla del correo."""
+    return [s["id"] for s in cola.solicitudes() if s.get("origen") == "central" and s.get("plantilla")]
 
 
 class Conexion:
@@ -102,8 +115,11 @@ class Conexion:
             resp = enviar_latido(url, token, self.disponible, documentadas_para_central())
         except ConnectionError as e:
             return {"ok": False, "mensaje": str(e)}
+        antes = set(plantillas_listas())
         nuevos = aplicar_respuesta(resp)
-        return {"ok": True, "pem": resp.get("pem", ""), "nuevos": nuevos, "simulacion": bool(resp.get("simulacion")),
+        plantillas = [i for i in plantillas_listas() if i not in antes]
+        return {"ok": True, "pem": resp.get("pem", ""), "nuevos": nuevos, "plantillas": plantillas,
+                "simulacion": bool(resp.get("simulacion")), "correo_central": bool(resp.get("correo_central")),
                 "mensaje": "Conectado como %s" % resp.get("pem", "")}
 
     def _ciclo(self):

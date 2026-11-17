@@ -58,6 +58,7 @@ class Central:
         self.R = reparto
         self.ruta = os.path.join(carpeta, "central.json")
         self.simular = simular
+        self.correo_activo = False         # True si este central lee el correo (fase 2)
         self.lock = threading.RLock()
         try:
             with open(self.ruta, encoding="utf-8") as f:
@@ -98,7 +99,7 @@ class Central:
                     confirmadas.append(i)
             self.guardar()
             return 200, {"ok": True, "pem": nombre, "casos": casos, "confirmadas": confirmadas,
-                         "simulacion": self.simular, "hora": ahora.isoformat(timespec="seconds")}
+                         "simulacion": self.simular, "correo_central": self.correo_activo, "hora": ahora.isoformat(timespec="seconds")}
 
     # ---------------------------------------------------------------- ciclo con SharePoint
     def repartir(self, items, asignar, log=print, ahora=None):
@@ -121,15 +122,65 @@ class Central:
             self.guardar()
         return hechas
 
+    # ---------------------------------------------------------------- correo (un solo buzon para todos)
+    def pendientes_correo(self):
+        with self.lock:
+            return self.R.pendientes_correo(self.estado)
+
+    def guardar_correo(self, texto, hora, sol):
+        """Lo llama el lector de correo cuando confirma el SOLICITUD ID. Devuelve el id o None."""
+        with self.lock:
+            ok = self.R.guardar_correo(self.estado, sol["id"], texto, hora)
+            if ok:
+                self.guardar()
+        return sol["id"] if ok else None
+
     def tabla(self, ahora=None):
         with self.lock:
             filas = self.R.resumen(self.estado, ahora or datetime.now())
         out = []
         for f in filas:
-            out.append("   %-28s %-12s %-14s %-10s %s" % (
+            out.append("   %-28s %-12s %-14s %-10s %-9s %s" % (
                 f["pem"][:28], "conectado" if f["conectado"] else "-", "DISPONIBLE" if f["disponible"] else "no disp.",
-                f["abierta"] or "-", (f["ultimo"] or "")[11:16]))
+                f["abierta"] or "-", ("correo OK" if f["correo"] else "sin correo") if f["abierta"] else "",
+                (f["ultimo"] or "")[11:16]))
         return out
+
+
+def hilo_correo(central, ver=False, cada=60, debug=False, parar=None):
+    """Lector de correo central: un solo Outlook (el buzon de la lista llega a todos). Cada `cada` segundos busca
+    la cuenta RR de las asignaciones sin correo y guarda la plantilla cuando el SOLICITUD ID coincide."""
+    import correo_lector
+    import ms_login
+    from hac_zac import credenciales
+    from navegador import aplicar_visibilidad
+    parar = parar or threading.Event()
+    d = correo_lector.abrir(ver)
+    cr = credenciales.cargar()
+    en_outlook = lambda u: "outlook." in u.split("/")[2].lower() if "//" in u else False
+    if not ms_login.asegurar_sesion(d, en_outlook, cr.get("ms_usuario", ""), cr.get("ms_clave", ""),
+                                    mostrar=lambda: aplicar_visibilidad(d, "correo", True)):
+        print("[correo] no se pudo iniciar sesion en Outlook en 5 minutos; se intentara en cada ciclo.")
+    try:
+        while not parar.is_set():
+            try:
+                pend = central.pendientes_correo()
+                if pend:
+                    aplicar_visibilidad(d, "correo")
+                    try:
+                        d.get(correo_lector.URL)
+                        time.sleep(3)
+                    except Exception:
+                        pass
+                    n = correo_lector.revisar(d, debug, pendientes=pend, guardar=central.guardar_correo)
+                    print(time.strftime("%H:%M:%S"), "[correo] buscadas %d, plantillas nuevas %d" % (len(pend), n))
+            except Exception as e:
+                print(time.strftime("%H:%M:%S"), "[correo] error:", e)
+                import logging
+                logging.getLogger("hac_zac.central").exception("correo")
+            parar.wait(cada)
+    finally:
+        d.quit()
 
 
 def crear_servidor(central, puerto=PUERTO, host="0.0.0.0"):
@@ -210,6 +261,9 @@ def main():
     ap.add_argument("--cada", type=int, default=CADA_S)
     ap.add_argument("--puerto", type=int, default=PUERTO)
     ap.add_argument("--archivo", help="items.json de prueba (sin SharePoint)")
+    ap.add_argument("--sin-correo", action="store_true", help="no leer el correo aqui (cada PEM usa su lector)")
+    ap.add_argument("--correo-cada", type=int, default=60, help="segundos entre revisiones del correo")
+    ap.add_argument("--debug-correo", action="store_true", help="guarda outlook_debug_* para ajustar selectores")
     a = ap.parse_args()
     try:
         sys.stdout.reconfigure(line_buffering=True)     # que cada linea se vea al momento (consola o ventana)
@@ -253,6 +307,14 @@ def main():
     if not ms_login.asegurar_sesion(d, sp_lector.url_es_sharepoint, cr.get("ms_usuario", ""), cr.get("ms_clave", ""),
                                     mostrar=lambda: aplicar_visibilidad(d, "sp", True)):
         print("No se pudo iniciar sesion en SharePoint en 5 minutos; se intentara en cada ciclo.")
+    parar_correo = threading.Event()
+    if not a.sin_correo:
+        # 6 s despues: dos Chrome arrancando a la vez se pisan al preparar el driver
+        threading.Timer(6, lambda: threading.Thread(
+            target=hilo_correo, args=(central, a.ver, a.correo_cada, a.debug_correo, parar_correo),
+            daemon=True, name="correo-central").start()).start()
+        central.correo_activo = True
+        print("Lector de correo central: activo (cada %d s)." % a.correo_cada)
     try:
         while True:
             try:
@@ -274,6 +336,7 @@ def main():
                 pass
             time.sleep(a.cada)
     finally:
+        parar_correo.set()
         srv.shutdown()
         d.quit()
 

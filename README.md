@@ -38,21 +38,24 @@ Si se usa `CENTRO_DE_CONTROL.bat`, "Procesar" le pasa el caso a la ventana del s
 - En Cola, "Ver navegador" (SharePoint / Correo / Portal) muestra u oculta cada ventana sin cerrarla.
 - Estados de la cola: asignada -> en proceso -> por documentar (al terminar CRT) -> terminada (solo al documentar).
 
-## Reparto central (fase 1)
-Un PC (luego Azure) reparte las solicitudes; los PEM ya no abren SharePoint.
+## Reparto central (fases 1 y 2)
+Un PC (luego Azure) reparte las solicitudes y lee el correo; los PEM ya no abren SharePoint ni Outlook.
 
 **Administrador (PC central)**
 1. Registrar a cada PEM con el nombre EXACTO de la columna PEM_ASIGNADO; muestra su token:
    `py -3 servidor_central.py --agregar "Nombre Apellido"`  (`--lista`, `--token "Nombre"` para cambiarlo, `--quitar`)
 2. Primera vez, en simulación (inicia sesión en SharePoint y solo muestra a quién asignaría):
    `py -3 servidor_central.py --simular --ver`
-3. De verdad: `py -3 servidor_central.py`. Windows preguntará por el Firewall: permitir en **redes privadas**.
+3. De verdad: `py -3 servidor_central.py`. Abre dos navegadores: SharePoint y Outlook (el correo llega a
+   todos los PEM, así que basta un buzón). Cada 60 s busca la cuenta RR de las asignaciones sin plantilla y la
+   une solo si el SOLICITUD ID coincide. Opciones: `--sin-correo`, `--correo-cada 60`, `--debug-correo`.
+   Windows preguntará por el Firewall: permitir en **redes privadas**.
    Datos del central: `%LOCALAPPDATA%\hac_zac\central` (aparte de los de la aplicación, aunque sea el mismo PC).
 
 **Cada PEM**
 1. Ajustes → Mostrar funciones avanzadas → **Reparto central**: dirección (ej. `http://PC-OFICINA:8765`) y su token. Guardar y reabrir.
 2. En la Cola pulsar **Disponible**. Solo recibe con la aplicación abierta y Disponible, una solicitud a la vez,
-   por turno (el que lleva más tiempo sin recibir). El lector de correo sigue en su PC (fase 2 lo centraliza).
+   por turno (el que lleva más tiempo sin recibir). La plantilla del correo llega sola (aviso "Plantilla lista").
 3. Al documentar, el Est_Seg lo escribe el central en SharePoint.
 
 Seguridad: cada PEM tiene su token (cifrado en su PC). En la red interna va por HTTP; en Azure irá por HTTPS.

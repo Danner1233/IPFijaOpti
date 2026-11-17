@@ -139,8 +139,36 @@ def latido(estado, nombre, disponible, documentadas, ahora):
         if not a.get("cerrada_en"):
             a["cerrada_en"], a["estado"] = _iso(ahora), str(est)
         pedir_sp[str(i)] = str(est)
-    casos = [estado["asignaciones"][i]["datos"] for i in abiertas_de(estado, nombre)]
+    casos = []
+    for i in abiertas_de(estado, nombre):
+        a = estado["asignaciones"][i]
+        caso = dict(a["datos"])
+        if a.get("correo"):
+            caso["_correo"] = a["correo"]          # {"texto", "recibido"}: la plantilla completa del correo
+        casos.append(caso)
     return casos, pedir_sp
+
+
+# ---------------------------------------------------------------------------------------------- correo
+def pendientes_correo(estado):
+    """{RR: {"id"}} de las asignaciones abiertas que aun no tienen su correo (para el lector central)."""
+    out = {}
+    for i, a in estado["asignaciones"].items():
+        if a.get("cerrada_en") or a.get("correo"):
+            continue
+        rr = cola.solo_digitos(a["datos"].get("rr"))
+        if rr:
+            out[rr] = {"id": i, "pem": a["pem"]}
+    return out
+
+
+def guardar_correo(estado, id_, texto, recibido):
+    """Une el correo (ya confirmado por SOLICITUD ID) con su asignacion. True si se guardo."""
+    a = estado["asignaciones"].get(str(id_))
+    if not a or not texto:
+        return False
+    a["correo"] = {"texto": texto, "recibido": recibido or ""}
+    return True
 
 
 def resumen(estado, ahora):
@@ -149,5 +177,6 @@ def resumen(estado, ahora):
     for n, p in sorted(estado["pems"].items()):
         ab = abiertas_de(estado, n)
         filas.append({"pem": n, "conectado": conectado(p, ahora), "disponible": bool(p.get("disponible")),
-                      "abierta": ab[0] if ab else "", "ultimo": p.get("ultimo") or ""})
+                      "abierta": ab[0] if ab else "", "ultimo": p.get("ultimo") or "",
+                      "correo": bool(ab and estado["asignaciones"][ab[0]].get("correo"))})
     return filas

@@ -262,10 +262,19 @@ def _volcar_diagnostico(driver, motivo):
     print("   [debug] guardado outlook_debug_diagnostico.txt (+ pagina.html y pantalla.png): " + motivo)
 
 
-def revisar(driver, debug=False):
-    """Por cada solicitud MIA sin plantilla: busca su cuenta RR en Outlook, abre los correos que salen,
-    confirma que el SOLICITUD ID sea el de la solicitud y recien ahi guarda la plantilla."""
-    pendientes = cola.pendientes_correo()          # {RR: mi solicitud sin plantilla}
+def _guardar_en_mi_cola(texto, hora, sol):
+    r = cola.registrar_correo(texto, recibido=hora)
+    return r[0] if r else None
+
+
+def revisar(driver, debug=False, pendientes=None, guardar=None):
+    """Por cada solicitud sin plantilla: busca su cuenta RR en Outlook, abre los correos que salen,
+    confirma que el SOLICITUD ID sea el de la solicitud y recien ahi guarda la plantilla.
+    pendientes: {RR: {"id": ...}} (por defecto, mis solicitudes de la cola sin plantilla).
+    guardar(texto, hora, sol) -> id guardado o None (por defecto, en mi cola). El servidor central pasa los suyos."""
+    if pendientes is None:
+        pendientes = cola.pendientes_correo()      # {RR: mi solicitud sin plantilla}
+    guardar = guardar or _guardar_en_mi_cola
     if not pendientes:
         return 0
     nuevos = 0
@@ -315,10 +324,10 @@ def revisar(driver, debug=False):
             print("   cuenta %s: aun no llega el correo de la solicitud %s" % (rr, sol["id"]))
             continue
         texto, hora = hallado
-        r = cola.registrar_correo(texto, recibido=hora)
+        r = guardar(texto, hora, sol)
         if r:
             nuevos += 1
-            print("   plantilla guardada para la solicitud", r[0], "- lista para el script")
+            print("   plantilla guardada para la solicitud", r, "- lista para el script")
     return nuevos
 
 

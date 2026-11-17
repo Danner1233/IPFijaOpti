@@ -42,7 +42,8 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
 - Ventana cortada al abrir: causa real en `adaptable.py` (Scrollable no se enteraba del contenido que crecía). Arreglado; falta confirmar en el PC.
 - Sin verificar en sistemas reales: selectores de Outlook, columnas de escritura en SharePoint, arranque de Chrome, descifrado DPAPI dentro de SecureCRT.
   Outlook: `py -3 correo_lector.py --una --debug` genera `outlook_debug_diagnostico.txt` (sin datos de clientes) y otros archivos de depuración.
-- Fase 1 (reparto central) hecha; falta probar con SharePoint real en simulación. Fase 2: lector de correo central; fase 3: agente WhatsApp (Cloud API de Meta, número de prueba).
+- Fases 1 (reparto central) y 2 (correo central: `hilo_correo` en servidor_central.py reutiliza `correo_lector.revisar` con
+  `pendientes`/`guardar` propios; el latido entrega `_correo`) hechas; falta probar con SharePoint/Outlook reales. Fase 3: agente WhatsApp (Cloud API de Meta, número de prueba).
 - Pendiente: Microsoft Graph para SharePoint/Outlook (requiere app en Entra ID por TI), partir el script de SecureCRT en módulos probables.
 
 ## Proyecto aparte: agente de técnicos (`agente_tecnicos.zip`, no está en este repositorio)

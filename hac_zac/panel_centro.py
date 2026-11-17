@@ -134,9 +134,9 @@ class PanelCola(tk.Frame):
         from . import central_cliente
         self.central = central_cliente.configurado(servicio.ajustes)
         if self.central:
-            _titulo(self, "Mis solicitudes", "El servidor central le asigna las solicitudes cuando está Disponible "
-                    "(no tiene que abrir SharePoint). El lector de correo copia la plantilla; cuando la tenga, pulse "
-                    "Procesar.")
+            _titulo(self, "Mis solicitudes", "El servidor central le asigna las solicitudes cuando está Disponible y "
+                    "le trae la plantilla del correo (no tiene que abrir SharePoint ni Outlook). Cuando la solicitud "
+                    "tenga plantilla, pulse Procesar.")
             self._tarjeta_central(central_cliente)
         else:
             _titulo(self, "Mis solicitudes", "Los lectores traen las solicitudes que se le asignan a su nombre y copian "
@@ -145,8 +145,9 @@ class PanelCola(tk.Frame):
         self.auto = tk.BooleanVar(value=bool(servicio.ajustes.get("auto_asignar", True)))
         self.b_flujo = P.BOTON(self, "▶  Iniciar flujo (correo)" if self.central else
                                "▶  Iniciar flujo (SharePoint + correo)", self._flujo, True, 34)
-        self.b_flujo.pack(anchor="w", pady=(0, 8))
-        filas = ((("correo", "Lector de correo", "correo_lector.py"),) if self.central else
+        if not self.central:                       # con central: SharePoint y correo los atiende el servidor
+            self.b_flujo.pack(anchor="w", pady=(0, 8))
+        filas =((("correo", "Lector de correo", "correo_lector.py"),) if self.central else
                  (("sp", "Lector de SharePoint", "sp_lector.py"), ("correo", "Lector de correo", "correo_lector.py")))
         self.serv = _Servicios(self, filas, servicio, self._args)
         if not self.central:                       # con reparto central, asignar lo hace el servidor
@@ -225,9 +226,19 @@ class PanelCola(tk.Frame):
         msg = est.get("mensaje", "")
         if est.get("simulacion"):
             msg += "  (servidor en simulación: no asigna)"
+        elif est.get("ok") and not est.get("correo_central"):
+            msg += "  · el central no lee correo: inicie su Lector de correo abajo"
+        import time as _t
         if est.get("nuevos"):                       # la tabla se refresca sola cada 3 s
-            msg = "Nueva solicitud asignada: %s" % ", ".join(est["nuevos"])
+            self._aviso = ("Nueva solicitud asignada: %s (la plantilla llega con el correo)"
+                           % ", ".join(est["nuevos"]), _t.time())
             self.bell()
+        elif est.get("plantillas"):
+            self._aviso = ("Plantilla lista: %s · ya puede Procesar" % ", ".join(est["plantillas"]), _t.time())
+            self.bell()
+        aviso = getattr(self, "_aviso", None)
+        if est.get("ok") and aviso and _t.time() - aviso[1] < 60:   # el aviso se queda 1 minuto a la vista
+            msg = aviso[0]
         self.lbl_central.config(text=msg, fg=P.C["txt"] if est.get("ok") else P.C["err"])
 
     def _args(self, clave):
@@ -279,6 +290,8 @@ class PanelCola(tk.Frame):
                             bg=P.C["card2"] if vivo else P.C["acc"], fg=P.C["txt"] if vivo else P.C["on_acc"])
 
     def iniciar_al_abrir(self):
+        if self.central:                           # el servidor central lee SharePoint y el correo
+            return
         if self.al_abrir.get() and not self.serv.hay_vivos():
             self.serv.iniciar_todo(False)
 
