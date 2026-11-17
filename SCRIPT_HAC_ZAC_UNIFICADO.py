@@ -541,10 +541,18 @@ def forzar_sufijo_201(interfaz):
 
 
 def obtener_capa2(salida_config):
-    """Obtiene el Capa 2 desde description y clasifica ZAC/HAC."""
+    """Obtiene el Capa 2 desde description y clasifica ZAC / HAC / OH.
+
+    OH = capa 2 de red ONNET/ATP (ej. OH_BOGALGDOH_I_7360_CentrodeGravedad2_8): se reconoce solo si empieza
+    por OH_ / OH- / OH. (no por una palabra que tenga "OH" en medio). ZAC/HAC tienen prioridad.
+    """
 
     patron = re.compile(
         r"\b((?:ZAC|HAC)[^\s()]+)",
+        re.IGNORECASE
+    )
+    patron_oh = re.compile(
+        r"(?<![A-Za-z0-9])(OH[_\-.][^\s()]+)",
         re.IGNORECASE
     )
 
@@ -564,6 +572,11 @@ def obtener_capa2(salida_config):
                 )
 
                 return tipo, nombre
+
+            m = patron_oh.search(linea)
+
+            if m:
+                return "OH", m.group(1)
 
     return None, None
 
