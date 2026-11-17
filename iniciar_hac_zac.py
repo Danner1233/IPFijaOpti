@@ -29,6 +29,19 @@ def ajustes():
             return {}
 
 
+def resolver_portable(exe):
+    """Para SecureCRTPortable.exe: (SecureCRT.exe interno, carpeta Data\\Config). Si no es portable: (None, None)."""
+    if os.path.basename(exe).lower() != "securecrtportable.exe":
+        return None, None
+    base = os.path.dirname(exe)
+    config = os.path.join(base, "Data", "Config")
+    for sub in ("ProgramFiles64", "ProgramFiles", ""):
+        real = os.path.join(base, "App", sub, "SecureCRT.exe")
+        if os.path.isfile(real):
+            return real, config
+    return None, None
+
+
 def comando(aj):
     """Lista para subprocess, o ValueError con un mensaje claro."""
     exe = str(aj.get("securecrt_exe") or "").strip().strip('"')
@@ -40,6 +53,10 @@ def comando(aj):
     if not os.path.isfile(SCRIPT):
         raise ValueError("No encuentro el script:\n%s" % SCRIPT)
     cmd = [exe]
+    real, config = resolver_portable(exe)
+    if real:
+        # SecureCRTPortable.exe NO pasa /S ni /SCRIPT: se llama al SecureCRT interno con la configuracion del portable
+        cmd = [real, "/F", config]
     sesion = str(aj.get("sesion_crt") or "").strip()
     if sesion:
         cmd += ["/S", sesion]

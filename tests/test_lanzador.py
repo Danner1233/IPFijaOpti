@@ -28,6 +28,17 @@ class PruebasComando(unittest.TestCase):
     def test_sin_sesion_solo_script(self):
         self.assertEqual(L.comando({"securecrt_exe": self.exe})[1], "/SCRIPT")
 
+    def test_portable_usa_el_securecrt_interno_con_su_configuracion(self):
+        base = tempfile.mkdtemp()
+        portable = os.path.join(base, "SecureCRTPortable.exe")
+        real = os.path.join(base, "App", "ProgramFiles64", "SecureCRT.exe")
+        os.makedirs(os.path.dirname(real))
+        for f in (portable, real):
+            open(f, "w").close()
+        cmd = L.comando({"securecrt_exe": portable, "sesion_crt": "JUMP"})
+        self.assertEqual(cmd[:5], [real, "/F", os.path.join(base, "Data", "Config"), "/S", "JUMP"])
+        self.assertEqual(cmd[5], "/SCRIPT")
+
     def test_errores_claros(self):
         with self.assertRaises(ValueError) as e:
             L.comando({})
