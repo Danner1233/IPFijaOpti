@@ -2,7 +2,7 @@
 """Quien esta en linea en el equipo, sin servidor: cada aplicacion deja su estado en una carpeta compartida
 (OneDrive / SharePoint sincronizada en todos los PC) y lee la de los demas.
 
-* EN LINEA : uso la aplicacion (clic, tecla o rueda) en los ultimos 5 minutos, o tiene un proceso corriendo.
+* ACTIVO   : uso la aplicacion (clic, tecla o rueda) en los ultimos 5 minutos, o tiene un proceso corriendo.
 * AUSENTE  : la aplicacion esta abierta pero lleva 5 minutos sin uso.
 * DESCONECTADO: su archivo no se actualiza hace mas de 3 minutos (aplicacion cerrada, PC apagado o sin red).
 
@@ -123,4 +123,4 @@ def hace(iso, ahora=None):
     return d.strftime("%d/%m %H:%M")
 
 
-ETIQUETA = {"en_linea": "● En línea", "ausente": "◐ Ausente", "desconectado": "○ Desconectado"}
+ETIQUETA = {"en_linea": "● Activo", "ausente": "◐ Ausente", "desconectado": "○ Desconectado"}

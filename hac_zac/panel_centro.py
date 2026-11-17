@@ -470,12 +470,12 @@ class PanelCola(tk.Frame):
 # ======================================================================================= EQUIPO
 class PanelEquipo(tk.Frame):
     """Quien esta en linea, ausente o desconectado (carpeta compartida del equipo en OneDrive)."""
-    COLS = ("PEM", "Estado", "Último uso", "En línea hoy")
+    COLS = ("PEM", "Estado", "Último uso", "Activo hoy")
 
     def __init__(self, padre, servicio):
         super().__init__(padre, bg=P.C["bg"])
         self.sv = servicio
-        _titulo(self, "Equipo", "Quién está usando el optimizador. En línea: usó la aplicación en los últimos 5 "
+        _titulo(self, "Equipo", "Quién está usando el optimizador (estado automático, nadie lo puede cambiar a mano). Activo: usó la aplicación en los últimos 5 "
                 "minutos o tiene un proceso corriendo. Ausente: la tiene abierta pero lleva 5 minutos sin usarla. "
                 "Desconectado: cerró la aplicación o su PC no sincroniza.")
         m, self.t = P._tabla(self, self.COLS, (260, 150, 160, 130), alto=10)
@@ -513,7 +513,7 @@ class PanelEquipo(tk.Frame):
                     presencia.hace(f["ultima_actividad"]),
                     ("%d h %02d min" % divmod(f["en_linea_hoy_min"], 60)) if f["en_linea_hoy_min"] else "—"))
             n = sum(1 for f in filas if f["estado"] == "en_linea")
-            self.lbl.config(text="%d en línea · %d ausente(s) · %d desconectado(s) · se actualiza cada 30 s" % (
+            self.lbl.config(text="%d activo(s) · %d ausente(s) · %d desconectado(s) · se actualiza cada 30 s" % (
                 n, sum(1 for f in filas if f["estado"] == "ausente"),
                 sum(1 for f in filas if f["estado"] == "desconectado")) if filas else
                 "Nadie ha publicado su estado todavía en esa carpeta.", fg=P.C["mut"])

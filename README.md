@@ -88,9 +88,9 @@ si no se usa `az login`) y luego `py -3 servidor_central.py --probar-ia "me pasa
 ## Equipo en línea y tiempo de gestión
 **Equipo (pestaña Equipo):** en Ajustes → "Carpeta del equipo" se elige una carpeta de OneDrive/SharePoint que todos
 los PEM tengan sincronizada (y su nombre en SharePoint en funciones avanzadas). Cada app publica cada minuto:
-- **En línea**: usó la app (clic/tecla) en los últimos 5 min o tiene un proceso corriendo.
+- **Activo**: usó la app (clic/tecla) en los últimos 5 min o tiene un proceso corriendo.
 - **Ausente**: app abierta, 5 min sin uso. **Desconectado**: no publica hace más de 3 min.
-- Se suman los minutos en línea del día (sin contar ausencias). No se publica ningún dato de clientes.
+- Se suman los minutos activos del día (sin contar ausencias). No se publica ningún dato de clientes.
 
 **Tiempo de gestión:** corre desde que la solicitud se asigna (cola) hasta Documentar. Límite: **Claro 15 min**,
 **ATP/ONNET 30 min**. Se ve en la plantilla (⏱ 12/15 min), en la Cola y en el Historial (filtro "Tiempo superado").

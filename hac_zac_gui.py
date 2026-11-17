@@ -190,8 +190,10 @@ class App(tk.Tk):
         self._ultima_actividad = datetime.now()
         for ev in ("<KeyPress>", "<ButtonPress>", "<MouseWheel>"):
             self.bind_all(ev, self._actividad, add="+")
+        self._publicado = None
         if not demo:
-            self.after(5000, self._publicar_presencia)
+            self.after(2000, self._publicar_presencia)
+        self.after(3000, self._pintar_estado)
         # Al abrir, Windows aun no ha dado su tamano final a la ventana cuando se calcula el diseno: sin esto
         # hay que maximizar y restaurar para ver todo. Se fuerza un recalculo cuando la ventana ya esta mostrada.
         self.bind("<Map>", self._al_mostrar, add="+")
@@ -214,11 +216,36 @@ class App(tk.Tk):
             def trabajo(ultima=self._ultima_actividad, ocupado=bool(self.corriendo)):
                 try:
                     presencia.publicar(carpeta, nombre, ultima, ocupado)
+                    self._publicado = datetime.now()
                 except Exception:
+                    self._publicado = None
                     from hac_zac import log
                     log.obtener("presencia").warning("no se pudo publicar en %s", carpeta, exc_info=True)
             threading.Thread(target=trabajo, daemon=True).start()
         self.after(60000, self._publicar_presencia)
+
+    def _pintar_estado(self):
+        """Cada 5 s: mi estado (solo lectura). Desconectado si no hay carpeta/nombre o no se pudo publicar."""
+        from hac_zac import presencia
+        try:
+            carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+            nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
+            ahora = datetime.now()
+            pub = getattr(self, "_publicado", None)
+            if self.demo:
+                estado, ayuda = "desconectado", "modo demo"
+            elif not carpeta or not nombre:
+                estado, ayuda = "desconectado", "sin carpeta del equipo"
+            elif not pub or (ahora - pub).total_seconds() > presencia.DESCONECTADO_S:
+                estado, ayuda = "desconectado", "sin sincronizar"
+            else:
+                estado = presencia.estado_propio(self._ultima_actividad, bool(self.corriendo), ahora)
+                ayuda = ""
+            color = {"en_linea": C["ok"], "ausente": C["warn"]}.get(estado, C["mut"])
+            self.lbl_estado.config(text=presencia.ETIQUETA[estado] + (" (%s)" % ayuda if ayuda else ""), fg=color)
+        except Exception:
+            pass
+        self.after(5000, self._pintar_estado)
 
     # ---------- base ----------
     def _al_mostrar(self, e=None):
@@ -276,6 +303,11 @@ class App(tk.Tk):
         if not self.centro:
             self.b_nueva.pack(side="right", padx=(8, 0))
         self.b_nueva.bind("<Button-1>", lambda e: self._nueva_solicitud())
+        # Mi estado en el equipo: lo calcula el sistema (uso de la app / proceso corriendo / sincronizacion).
+        # NO es un boton: nadie puede ponerse "Activo" a mano.
+        self.lbl_estado = tk.Label(h, text="○ Desconectado", bg=C["bg"], fg=C["mut"], font=(FONT, 10, "bold"),
+                                   padx=6, pady=3)
+        self.lbl_estado.pack(side="right", padx=(8, 0))
         # el subtitulo se oculta si la ventana es angosta
         h.bind("<Configure>", lambda e: (sub.pack_forget() if e.width < ad.px(640) else
                                          (sub.pack(side="left", pady=(8, 0)) if not sub.winfo_ismapped() else None)))
