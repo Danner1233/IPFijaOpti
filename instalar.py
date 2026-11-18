@@ -18,7 +18,8 @@ JUMP_HOST = "172.31.238.6"
 # Archivos y carpetas del USUARIO: si ya existen en el destino, nunca se reemplazan.
 DATOS_USUARIO = {"ajustes.json", "credenciales.json", "historial_capa2.json", "cola.json", "ingenieros.json",
                  "sp_pendientes.json", "registro_sharepoint.jsonl", "historial_documentacion.json",
-                 "documentacion.json", "plantilla_base.txt", "correos_vistos.txt"}
+                 "documentacion.json", "plantilla_base.txt", "correos_vistos.txt",
+                 "pausa.json", "conexion.json", "reportes_pendientes.json"}
 CARPETAS_USUARIO = {"solicitudes", "demoras", "browser_profile"}
 
 

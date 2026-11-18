@@ -33,3 +33,9 @@ items_demo.json
 demoras/
 dist/
 sp_liberar.json
+
+# datos locales de pausa, conexion y reportes
+pausa.json
+conexion.json
+reportes_pendientes.json
+reportes/
