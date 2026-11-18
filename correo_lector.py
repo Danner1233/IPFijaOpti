@@ -3,7 +3,7 @@
 asigno en SharePoint (por cuenta RR) y guarda la plantilla completa en la cola. No abre los demas correos.
 
 Primera vez:  python correo_lector.py --ver        (inicie sesion en Outlook en la ventana y pulse Enter)
-Despues:      python correo_lector.py              (busca la cuenta RR de sus solicitudes: cada 15 s si hay pendientes, si no cada minuto)
+Despues:      python correo_lector.py              (busca la cuenta RR de sus solicitudes: cada 5 s si hay pendientes, si no cada minuto)
 Diagnostico:  python correo_lector.py --una --debug   (guarda outlook_debug_lista.html y outlook_debug_mensaje.txt;
               si no encuentra el buscador, filas o texto: outlook_debug_diagnostico.txt, _pagina.html, _pantalla.png)
 Prueba:       python correo_lector.py --archivo correo.txt    (sin navegador)
@@ -66,8 +66,9 @@ def hora_de(etiqueta):
 
 
 CADA_S = 60            # sin nada pendiente: el correo se actualiza cada 1 minuto
-RAPIDO_S = 15          # con una solicitud esperando su plantilla: se busca cada 15 s
-PASO_S = 5             # mientras espera, cada 5 s mira si llego una solicitud nueva (y busca de una vez)
+RAPIDO_S = 5           # con una solicitud esperando su plantilla: se busca cada 5 s
+PASO_S = 2             # mientras espera, cada 2 s mira si llego una solicitud nueva (y busca de una vez)
+RECARGAR_S = 300       # la bandeja solo se recarga cada 5 min o tras un error (la busqueda ya consulta el servidor)
 MAX_RESULTADOS = 8     # correos que se abren por busqueda (los mas recientes de esa cuenta RR)
 
 ESPERA_LISTA_S = 12    # maximo que se espera a que Outlook muestre los resultados de la busqueda
@@ -218,9 +219,9 @@ def _buscar_rr(driver, rr):
     caja.send_keys(Keys.DELETE)
     caja.send_keys(rr)
     caja.send_keys(Keys.ENTER)
-    time.sleep(1.5)
-    esperar(lambda: _resultados(driver) and _firma(driver) != antes, ESPERA_LISTA_S)
-    time.sleep(0.8)                                     # deja terminar de pintar la lista
+    time.sleep(0.5)
+    esperar(lambda: _resultados(driver) and _firma(driver) != antes, ESPERA_LISTA_S, paso=0.25)
+    time.sleep(0.4)                                     # deja terminar de pintar la lista
 
 
 def _leer_panel(driver, antes=""):
@@ -233,10 +234,10 @@ def _leer_panel(driver, antes=""):
         if isinstance(ts, str):
             ts = [ts]
         return ts if ts and "\n".join(ts) != antes else None
-    return esperar(listo, ESPERA_LECTURA_S) or []
+    return esperar(listo, ESPERA_LECTURA_S, paso=0.25) or []
 
 
-def _releer(driver, textos, sol_id, espera=2.0, dormir=time.sleep):
+def _releer(driver, textos, sol_id, espera=1.5, dormir=time.sleep):
     """Segunda lectura del panel cuando la primera no trajo SOLICITUD ID. Devuelve (texto, textos)."""
     dormir(espera)
     try:
@@ -297,6 +298,22 @@ def _guardar_en_mi_cola(texto, hora, sol):
     return r[0] if r else None
 
 
+# Correos ya abiertos que eran de OTRA solicitud de la misma cuenta: no se vuelven a abrir en cada vuelta
+# (asi cada busqueda solo abre lo nuevo y la plantilla se copia apenas llega). {solicitud: {etiqueta del correo}}
+YA_VISTOS = {}
+
+
+def ya_visto(sol_id, etiqueta):
+    return bool(etiqueta) and etiqueta in YA_VISTOS.get(str(sol_id), set())
+
+
+def marcar_visto(sol_id, etiqueta, texto):
+    """Solo se recuerda si el correo trae OTRO SOLICITUD ID (si no se pudo leer, se vuelve a intentar)."""
+    id_ = id_del_correo(texto or "")
+    if etiqueta and id_ and id_ != str(sol_id):
+        YA_VISTOS.setdefault(str(sol_id), set()).add(etiqueta)
+
+
 def revisar(driver, debug=False, pendientes=None, guardar=None):
     """Por cada solicitud sin plantilla: busca su cuenta RR en Outlook, abre los correos que salen,
     confirma que el SOLICITUD ID sea el de la solicitud y recien ahi guarda la plantilla.
@@ -305,6 +322,8 @@ def revisar(driver, debug=False, pendientes=None, guardar=None):
     if pendientes is None:
         pendientes = cola.pendientes_correo()      # {RR: mi solicitud sin plantilla}
     guardar = guardar or _guardar_en_mi_cola
+    for k in [k for k in YA_VISTOS if k not in {str(s.get("id")) for s in pendientes.values()}]:
+        del YA_VISTOS[k]                           # solicitudes que ya tienen plantilla
     if not pendientes:
         return 0
     nuevos = 0
@@ -336,6 +355,8 @@ def revisar(driver, debug=False, pendientes=None, guardar=None):
             try:
                 it = _resultados(driver)[i]
                 etiqueta = it.get_attribute("aria-label") or it.text or ""
+                if ya_visto(sol_id, etiqueta):
+                    return "", None                     # de otra solicitud: ya se abrio en una vuelta anterior
                 it.click()
                 textos = _leer_panel(driver, previo["texto"])
                 previo["texto"] = "\n".join(textos)
@@ -348,6 +369,7 @@ def revisar(driver, debug=False, pendientes=None, guardar=None):
                         f.write(etiqueta + "\n\n" + ("\n\n----- mensaje -----\n\n".join(textos) or "(panel vacio)"))
                     if not textos:
                         _volcar_diagnostico(driver, "el panel de lectura no mostro texto (cuenta %s)" % rr)
+                marcar_visto(sol_id, etiqueta, texto)
                 return texto, hora_de(etiqueta)
             except Exception as e:
                 _LOG.warning("no pude abrir el resultado %s de la cuenta %s: %s", i, rr, e)
@@ -390,20 +412,24 @@ def main():
     if not ms_login.asegurar_sesion(d, en_outlook, cr.get("ms_usuario", ""), cr.get("ms_clave", ""),
                                     mostrar=lambda: aplicar_visibilidad(d, "correo", True)):
         print("No se pudo iniciar sesion en Outlook en 5 minutos; escribalo en la ventana de Chrome.")
+    recargada = time.time()
     try:
         while True:
             try:
                 aplicar_visibilidad(d, "correo")
-                try:
-                    d.get(URL)                    # actualiza la bandeja
-                    time.sleep(3)
-                except Exception:
-                    pass
+                if time.time() - recargada >= RECARGAR_S:
+                    try:
+                        d.get(URL)                # mantiene viva la sesion (la busqueda no lo necesita)
+                        time.sleep(3)
+                    except Exception:
+                        pass
+                    recargada = time.time()
                 n = revisar(d, a.debug)
                 print(time.strftime("%H:%M:%S"), "correos nuevos:", n)
             except Exception as e:
                 print(time.strftime("%H:%M:%S"), "error:", e)
                 _LOG.exception("error en el ciclo del lector")
+                recargada = 0                     # tras un error se recarga la bandeja ya
             if a.una:
                 break
             espera_siguiente(cola.pendientes_correo, a.cada)

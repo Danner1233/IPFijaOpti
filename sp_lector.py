@@ -4,7 +4,7 @@ sin permisos de administrador) y mete las solicitudes nuevas en la cola.
 
 Solo toma las solicitudes asignadas a MI nombre (columna PEM_ASIGNADO).
 Primera vez:  python sp_lector.py --nombre "Nombre Apellido" --ver      (se abre Chrome: inicie sesion y resuelva el MFA; queda guardado)
-Despues:      python sp_lector.py            (vigila la lista cada 7 s, en segundo plano)
+Despues:      python sp_lector.py            (vigila la lista cada 6 s, en segundo plano)
 Una vez:      python sp_lector.py --una --debug   (guarda sp_debug.json con los datos crudos)
 Prueba:       python sp_lector.py --archivo items.json   (sin navegador)
 
@@ -319,7 +319,7 @@ def leer_items(driver, debug=False):
                                                                     driver.current_url[:80]))
 
 
-CADA_S = 7          # cada vuelta: lee la lista (REST), reparte (admin) y ve si me asignaron algo
+CADA_S = 6          # cada vuelta: lee la lista (REST), reparte (admin) y ve si me asignaron algo
 REFRESCAR_S = 300   # la pagina solo se recarga cada 5 min (la lectura es por REST: no necesita recargar)
 MAX_HORAS = 24      # no importa solicitudes mias mas viejas que esto (ya no son "las de ahora")
 
