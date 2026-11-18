@@ -75,6 +75,25 @@ class PruebasRepartoPublicado(unittest.TestCase):
         self.assertFalse(R.lo_reparte_el_admin(self.d, "Camilo Vera"))
 
 
+class PruebasEstadoPublicacion(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp(prefix="hz_ep_")
+
+    def test_sin_archivo(self):
+        self.assertEqual(R.estado_publicacion(self.d, ROSTER, AHORA)[0], "sin_archivo")
+        self.assertEqual(R.estado_publicacion("", ROSTER, AHORA)[0], "sin_archivo")
+
+    def test_al_dia(self):
+        R.publicar(self.d, ROSTER, "Danner Arias", AHORA)
+        self.assertEqual(R.estado_publicacion(self.d, ROSTER, AHORA + timedelta(minutes=2)), ("ok", 2, []))
+
+    def test_detenido_y_recien_agregado(self):
+        R.publicar(self.d, ROSTER[:1], "Danner Arias", AHORA)
+        cod, minutos, faltan = R.estado_publicacion(self.d, ROSTER, AHORA + timedelta(minutes=86))
+        self.assertEqual((cod, minutos), ("detenido", 86))
+        self.assertEqual(faltan, ["Camilo Vera", "Laura Calderón"])
+
+
 class PruebasPin(unittest.TestCase):
     def test_pin(self):
         g = R.hash_pin("4321")

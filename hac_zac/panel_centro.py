@@ -636,8 +636,18 @@ class PanelAdmin(tk.Frame):
             msg, color = ("SIMULACIÓN: su Lector de SharePoint mostrará en la Cola a quién asignaría, sin escribir. "
                           "Pueden recibir ahora: %s." % (", ".join(listos) or "nadie")), P.C["warn"]
         else:
-            msg, color = ("Repartiendo DE VERDAD con su Lector de SharePoint (flujo iniciado en la Cola). Pueden "
-                          "recibir ahora: %s." % (", ".join(listos) or "nadie")), P.C["ok"]
+            cod, minutos, faltan = reparto_equipo.estado_publicacion(carpeta, roster)
+            if cod == "sin_archivo":
+                msg, color = ("REPARTO DETENIDO: su Lector de SharePoint todavía no ha repartido. Vaya a la Cola y "
+                              "pulse ▶ Iniciar flujo; mientras tanto los PEM se autoasignan."), P.C["err"]
+            elif cod == "detenido":
+                msg, color = ("REPARTO DETENIDO: su Lector de SharePoint no reparte hace %d min, así que los PEM se "
+                              "están autoasignando. Vaya a la Cola y pulse ▶ Iniciar flujo." % minutos), P.C["err"]
+            else:
+                msg, color = ("Repartiendo DE VERDAD (última vuelta hace %d min). Pueden recibir ahora: %s."
+                              % (minutos, ", ".join(listos) or "nadie")), P.C["ok"]
+                if faltan:
+                    msg += " Recién agregados (entran en la próxima vuelta): %s." % ", ".join(faltan)
         self.lbl.config(text=msg, fg=color)
         self._tarea = self.after(30000, self.refrescar)
 

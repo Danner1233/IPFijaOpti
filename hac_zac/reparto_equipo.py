@@ -127,6 +127,21 @@ def lo_reparte_el_admin(carpeta_equipo, nombre, ahora=None):
     return any(mismo(p.get("nombre"), nombre) for p in d.get("pems") or [])
 
 
+def estado_publicacion(carpeta_equipo, roster, ahora=None):
+    """Para el admin: ¿su lector esta publicando el reparto? Devuelve (codigo, minutos, faltan):
+    "sin_archivo" (nunca publico), "detenido" (hace >= VIGENTE_MIN: los PEM se autoasignan), "ok".
+    `faltan` = PEM de la lista que aun no salen en lo publicado (los toma en la proxima vuelta)."""
+    d = leer(carpeta_equipo) if carpeta_equipo else {}
+    try:
+        t = datetime.fromisoformat(d.get("actualizado", ""))
+    except (ValueError, TypeError):
+        return "sin_archivo", None, []
+    minutos = max(0, int(((ahora or datetime.now()) - t).total_seconds() // 60))
+    publicados = {_plano(p.get("nombre")) for p in d.get("pems") or []}
+    faltan = [p["nombre"] for p in roster if _plano(p["nombre"]) not in publicados]
+    return ("detenido" if minutos >= VIGENTE_MIN else "ok"), minutos, faltan
+
+
 # ---------------------------------------------------------------------------------------------- PIN admin
 def hash_pin(pin, sal=None):
     import hashlib
