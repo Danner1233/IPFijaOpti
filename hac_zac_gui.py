@@ -216,7 +216,7 @@ class App(tk.Tk):
 
             def trabajo(ultima=self._ultima_actividad, ocupado=bool(self.corriendo), pausa=presencia.mi_pausa()):
                 try:
-                    reg = presencia.publicar(carpeta, nombre, ultima, ocupado, pausa=pausa)
+                    reg = presencia.publicar(carpeta, nombre, ultima, ocupado, pausa=pausa, caso=self._mi_caso(nombre))
                     self._publicado = datetime.now()
                     from hac_zac import reportes
                     reportes.seguir_conexion(carpeta, nombre, "pausa" if pausa else reg["estado"])
@@ -231,6 +231,15 @@ class App(tk.Tk):
             except Exception:
                 pass
         self._tarea_pres = self.after(60000, self._publicar_presencia)
+
+    @staticmethod
+    def _mi_caso(nombre):
+        """ID de mi solicitud abierta (En proceso) o '' (Disponible)."""
+        try:
+            casos = cola.mis_casos(nombre)
+            return casos[0]["id"] if casos else ""
+        except Exception:
+            return ""
 
     def _alternar_pausa(self):
         """Ponerme en pausa (razon opcional + tiempo) o reanudar. Se publica al equipo de inmediato."""
@@ -274,6 +283,9 @@ class App(tk.Tk):
             texto = presencia.ETIQUETA[estado] + (" (%s)" % ayuda if ayuda else "")
             if pausa:
                 texto, color = presencia.texto_pausa(pausa), C["warn"]
+            elif estado == "en_linea":
+                clave, texto = presencia.situacion(estado, self._mi_caso(nombre))
+                color = C["acc"] if clave == "en_proceso" else C["ok"]
             self.lbl_estado.config(text=texto, fg=color)
             self.b_pausa.config(text="▶ Reanudar" if pausa else "⏸ Pausa",
                                 bg=C["acc"] if pausa else C["card2"], fg=C["on_acc"] if pausa else C["warn"])

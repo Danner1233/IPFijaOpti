@@ -208,7 +208,7 @@ def nombre_configurado():
 
 
 def auto_asignar_configurado():
-    return bool(_leer("ajustes.json", {}).get("auto_asignar", True))
+    return False                     # solo los administradores asignan (pestana Admin)
 
 
 # ---- estado final hacia SharePoint ------------------------------------------------------------

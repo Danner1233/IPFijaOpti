@@ -32,7 +32,7 @@ def configurador_de(aj):
     return conf or pem
 
 
-AJUSTES_DEFECTO = {"configurador": "", "carpeta_plantillas": "", "formato_carpeta": "%m-%d", "pem_nombre": "", "auto_asignar": True, "securecrt_exe": "", "sesion_crt": "", "servidor_central": "", "carpeta_equipo": "", "rol_admin": False, "admin_pin": "", "admin_repartir": False, "admin_simular": True, "subcarpeta_dia": True, "modo_avanzado": False,
+AJUSTES_DEFECTO = {"configurador": "", "carpeta_plantillas": "", "formato_carpeta": "%m-%d", "pem_nombre": "", "auto_asignar": False, "securecrt_exe": "", "sesion_crt": "", "servidor_central": "", "carpeta_equipo": "", "rol_admin": False, "admin_repartir": False, "admin_simular": True, "subcarpeta_dia": True, "modo_avanzado": False,
                     "auto_procesar": False, "flujo_al_abrir": False, "ver_sp": True, "ver_correo": True, "ver_portal": True}
 
 

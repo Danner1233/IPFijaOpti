@@ -363,8 +363,8 @@ def main():
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--archivo", help="usar un JSON de items en vez del navegador")
     ap.add_argument("--cada", type=int, default=CADA_S, help="segundos entre vueltas (por defecto %d)" % CADA_S)
-    ap.add_argument("--tomar", action="store_true", help="asignarme solo una solicitud libre cuando no tengo ninguna")
-    ap.add_argument("--simular", action="store_true", help="con --tomar: solo mostrar cual me asignaria, sin escribir")
+    ap.add_argument("--tomar", action="store_true", help="(ya no se usa: solo asignan los administradores)")
+    ap.add_argument("--simular", action="store_true", help="(ya no se usa)")
     ap.add_argument("--nombre", help="mi nombre como aparece en PEM_ASIGNADO (si no, ajustes.json: pem_nombre)")
     a = ap.parse_args()
     nombre = (a.nombre or cola.nombre_configurado()).strip()
@@ -396,29 +396,8 @@ def main():
                 aj = cola._leer("ajustes.json", {})
                 if repartir_equipo(d, items, aj):          # rol admin: reparte entre los PEM activos y en linea
                     items = leer_items(d)
-                if presencia.mi_pausa():
-                    if a.tomar or cola.auto_asignar_configurado():
-                        print("   estoy EN PAUSA: no me autoasigno")
-                elif reparto_equipo.lo_reparte_el_admin(aj.get("carpeta_equipo", ""), nombre):
-                    if a.tomar or cola.auto_asignar_configurado():
-                        print("   el admin reparte las solicitudes: no me autoasigno")
-                elif a.tomar or cola.auto_asignar_configurado():
-                    abiertas = cola.mis_casos(nombre)
-                    sin_cerrar = cola.abiertas_sp(items, nombre, MAX_HORAS)
-                    libres = [x for x in items if cola.es_libre(x)]
-                    if abiertas:
-                        print("   ya tengo la solicitud %s en curso: no tomo otra" % abiertas[0]["id"])
-                    elif sin_cerrar:
-                        print("   la solicitud %s sigue sin documentar (en SharePoint no esta Exitosa / No exitosa / "
-                              "Escalamiento): no tomo otra" % sin_cerrar[0])
-                    elif not libres:
-                        print("   leidas %d solicitudes; ninguna con PEM_ASIGNADO vacio" % len(items))
-                    else:
-                        print("   hay %d libre(s); tomo la mas antigua" % len(libres))
-                        tomada = tomar_libre(d, items, nombre, a.simular)
-                        if tomada:
-                            TOMADAS.add(str(tomada))
-                            items = leer_items(d)         # releer para ver mi asignacion
+                # Solo los administradores asignan (pestana Admin): la app del PEM ya no se autoasigna.
+                # Aqui solo se ven las solicitudes que me asignaron y se pasan a mi Cola.
                 n = procesar(items, nombre)
                 print(time.strftime("%H:%M:%S"), "mis solicitudes nuevas:", n)
             except Exception as e:

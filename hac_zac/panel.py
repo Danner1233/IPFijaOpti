@@ -901,7 +901,7 @@ class DialogoPausa(tk.Toplevel):
         caja.pack(fill="both", expand=True, padx=ad.px(22), pady=ad.px(18))
         tk.Label(caja, text="⏸ Ponerme en pausa", bg=C["bg"], fg=C["txt"], font=(FONT, 12, "bold"),
                  anchor="w").pack(fill="x")
-        tk.Label(caja, text="Mientras esté en pausa no le llegan solicitudes (ni del admin ni autoasignadas). "
+        tk.Label(caja, text="Mientras esté en pausa el administrador no le asigna solicitudes. "
                  "Al cumplirse el tiempo vuelve a recibir solo.", bg=C["bg"], fg=C["mut"], font=(FONT, 9),
                  anchor="w", justify="left", wraplength=ad.px(420)).pack(fill="x", pady=(4, 10))
         tk.Label(caja, text="Razón (opcional):", bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"),
@@ -1296,10 +1296,6 @@ class PanelAjustes(tk.Frame):
                      (("servidor_central", "Dirección", False), ("central_clave", "Token", True)))
         self._tarjeta_admin(self.caja_avz)
         self._padre_bloque = self
-        self.auto = tk.BooleanVar(value=False)
-        tk.Checkbutton(self.caja_avz, text="Asignarme una solicitud libre cuando no tenga ninguna", variable=self.auto,
-                       bg=C["bg"], fg=C["txt"], activebackground=C["bg"], selectcolor=C["card"],
-                       font=(FONT, 10), bd=0, highlightthickness=0).pack(anchor="w")
         barra = ad.Flujo(self, C["bg"])
         barra.pack(fill="x", pady=(10, 0))
         BOTON(barra, "Guardar", self._guardar, True, 12).pack(side="left")
@@ -1435,37 +1431,22 @@ class PanelAjustes(tk.Frame):
         si = bool(aj.get("rol_admin"))
         self.lbl_admin.config(text="● Rol de administrador ACTIVO" if si else "○ Sin rol de administrador",
                               fg=C["ok"] if si else C["mut"])
-        self.b_admin.config(text="Quitar rol de administrador" if si else
-                            ("Activar rol de administrador" if aj.get("admin_pin") else "Crear PIN y activar rol"))
+        self.b_admin.config(text="Quitar rol de administrador" if si else "Activar rol de administrador")
 
     def _alternar_admin(self):
         from . import reparto_equipo
         from .servicio import guardar_ajustes
         aj = self.sv.ajustes
-        if not aj.get("admin_pin"):
-            p1 = simpledialog.askstring("PIN de administrador", "Cree un PIN de administrador (mínimo 4 dígitos):",
-                                        show="•", parent=self)
-            if not p1:
-                return
-            if len(p1) < 4:
-                messagebox.showwarning("PIN", "El PIN debe tener al menos 4 caracteres.", parent=self)
-                return
-            if simpledialog.askstring("PIN de administrador", "Repita el PIN:", show="•", parent=self) != p1:
-                messagebox.showwarning("PIN", "Los PIN no coinciden.", parent=self)
-                return
-            aj["admin_pin"] = reparto_equipo.hash_pin(p1)
-            aj["rol_admin"] = True
-        else:
-            p = simpledialog.askstring("PIN de administrador", "Escriba el PIN de administrador:", show="•",
-                                       parent=self)
-            if p is None:
-                return
-            if not reparto_equipo.pin_valido(p, aj["admin_pin"]):
-                messagebox.showerror("PIN", "PIN incorrecto.", parent=self)
-                return
-            aj["rol_admin"] = not aj.get("rol_admin")
-            if not aj["rol_admin"]:
-                aj["admin_repartir"] = False        # sin rol, deja de repartir
+        p = simpledialog.askstring("PIN de administrador", "Escriba el PIN de administrador:", show="•", parent=self)
+        if p is None:
+            return
+        if not reparto_equipo.pin_admin_valido(p):
+            messagebox.showerror("PIN", "PIN incorrecto.", parent=self)
+            return
+        aj["rol_admin"] = not aj.get("rol_admin")
+        if not aj["rol_admin"]:
+            aj["admin_repartir"] = False            # sin rol, deja de repartir
+        aj.pop("admin_pin", None)                   # el PIN ya no se crea por PC
         guardar_ajustes(aj)
         self._pintar_admin()
         if self.al_modo:
@@ -1498,7 +1479,6 @@ class PanelAjustes(tk.Frame):
         datos["servidor_central"] = aj.get("servidor_central", "")
         datos["carpeta_equipo"] = aj.get("carpeta_equipo", "")
         datos["configurador"] = aj.get("configurador", "")
-        self.auto.set(bool(aj.get("auto_asignar", False)))
         self.sub.set(bool(aj.get("subcarpeta_dia", True)))
         self.avz.set(bool(aj.get("modo_avanzado", False)))
         self.e_carpeta.delete(0, "end")
@@ -1525,7 +1505,6 @@ class PanelAjustes(tk.Frame):
                 self.sv.ajustes["servidor_central"] = self.campos["servidor_central"].get().strip()
                 self.sv.ajustes["carpeta_equipo"] = self.campos["carpeta_equipo"].get().strip()
                 self.sv.ajustes["configurador"] = " ".join(self.campos["configurador"].get().split()).upper()
-                self.sv.ajustes["auto_asignar"] = bool(self.auto.get())
                 guardar_ajustes(self.sv.ajustes)
             self.lbl.config(text="Guardado", fg=C["ok"])
         except Exception as ex:

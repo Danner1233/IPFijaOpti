@@ -150,6 +150,14 @@ def hash_pin(pin, sal=None):
     return sal + "$" + hashlib.sha256((sal + str(pin)).encode("utf-8")).hexdigest()
 
 
+# PIN del rol administrador (el mismo para todos los admin). Se guarda solo su huella, no el numero.
+PIN_ADMIN = "9f3a1c7e5b2d4086$b42c88380e906ec1a58cafab74fb2b2b88e846e6977305ca212979c0fe6ab03f"
+
+
+def pin_admin_valido(pin):
+    return pin_valido(str(pin or "").strip(), PIN_ADMIN)
+
+
 def pin_valido(pin, guardado):
     import hmac
     if not guardado or "$" not in guardado:

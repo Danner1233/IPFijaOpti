@@ -74,3 +74,6 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   (pausas, conexion, solicitudes), un archivo por PEM para evitar conflictos de OneDrive; pendientes locales si no
   hay carpeta. Pausa del PEM (`presencia.poner_pausa/quitar_pausa/cerrar_pausa_vencida`, `DialogoPausa`), origen
   de la solicitud en la cola (`cola.poner_origen`: auto/admin/sharepoint). Pestaña Reportes (`PanelReportes`, solo admin).
+- Solo los administradores asignan (reparto en la pestaña Admin): el lector del PEM ya no se autoasigna
+  (`cola.auto_asignar_configurado()` es False). PIN de admin fijo (`reparto_equipo.PIN_ADMIN`, solo la huella).
+  Equipo/Admin muestran `presencia.situacion`: En proceso (con la solicitud), Disponible, En pausa, Ausente, Desconectado.
