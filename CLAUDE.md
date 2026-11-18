@@ -70,3 +70,7 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Azure del usuario: Foundry `foundry-danner`, proyecto `proj-default`, despliegue `gpt-5-mini`, autenticación con Entra ID (`az login`, rol Cognitive Services OpenAI User o Azure AI User).
 - Barreras en código, no en el modelo: datos limitados por teléfono, direccionamiento literal, no inventar IPs.
 - Pendiente: que `probar_ia` funcione con Azure, conectar el SharePoint real (Graph o Power Automate), WhatsApp Business API, alojarlo en Azure.
+- Reportes (`hac_zac/reportes.py`): CSV `;` UTF-8-BOM en `<carpeta_equipo>/reportes/<tipo>_<AAAA-MM>_<PEM>.csv`
+  (pausas, conexion, solicitudes), un archivo por PEM para evitar conflictos de OneDrive; pendientes locales si no
+  hay carpeta. Pausa del PEM (`presencia.poner_pausa/quitar_pausa/cerrar_pausa_vencida`, `DialogoPausa`), origen
+  de la solicitud en la cola (`cola.poner_origen`: auto/admin/sharepoint). Pestaña Reportes (`PanelReportes`, solo admin).

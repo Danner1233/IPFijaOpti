@@ -77,25 +77,47 @@ def mi_pausa(ahora=None):
     return pausa_vigente(cola._leer("pausa.json", {}), ahora)
 
 
-def poner_pausa(minutos, razon="", ahora=None):
+def poner_pausa(minutos, razon="", ahora=None, carpeta_equipo="", nombre=""):
     from datetime import timedelta
     from . import cola
     ahora = ahora or datetime.now()
+    cerrar_pausa_vencida(carpeta_equipo, nombre, ahora)          # una anterior que vencio con la app cerrada
     p = {"desde": _iso(ahora), "hasta": _iso(ahora + timedelta(minutes=int(minutos))),
          "razon": " ".join(str(razon or "").split())[:80]}
     cola._escribir("pausa.json", p)
     return p
 
 
-def quitar_pausa():
-    from . import cola
+def quitar_pausa(carpeta_equipo="", nombre="", ahora=None):
+    """El PEM pulso Reanudar: queda en el reporte de pausas (si ya habia vencido, como 'Se cumplio el tiempo')."""
+    from . import cola, reportes
+    ahora = ahora or datetime.now()
+    p = cola._leer("pausa.json", {})
+    if p.get("desde"):
+        hasta = _dt(p.get("hasta"))
+        vencida = hasta and ahora >= hasta
+        reportes.registrar_pausa(carpeta_equipo, nombre, p, hasta if vencida else ahora,
+                                 reportes.SE_CUMPLIO if vencida else reportes.REANUDO)
     cola._escribir("pausa.json", {})
+
+
+def cerrar_pausa_vencida(carpeta_equipo, nombre, ahora=None):
+    """Si la pausa ya se cumplio, la registra en el reporte y la borra. True si cerro una."""
+    from . import cola
+    ahora = ahora or datetime.now()
+    with cola._bloqueo():                                # dos ventanas en el mismo PC: una sola fila
+        p = cola._leer("pausa.json", {})
+        if not p.get("desde") or pausa_vigente(p, ahora):
+            return False
+        quitar_pausa(carpeta_equipo, nombre, ahora)
+        return True
 
 
 def texto_pausa(pausa):
     """'⏸ En pausa: Almuerzo (hasta 13:30)'."""
     h = _dt(pausa.get("hasta"))
-    return ETIQUETA["pausa"] + (": " + pausa["razon"] if pausa.get("razon") else "") +         (" (hasta %s)" % h.strftime("%H:%M") if h else "")
+    hasta = " (hasta %s)" % h.strftime("%H:%M") if h else ""
+    return ETIQUETA["pausa"] + (": " + pausa["razon"] if pausa.get("razon") else "") + hasta
 
 
 def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, pausa=None):

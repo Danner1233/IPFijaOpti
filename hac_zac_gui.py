@@ -176,6 +176,7 @@ class App(tk.Tk):
         self.v_cola = panel_centro.PanelCola(self.cont, self.sv, self._procesar_caso)
         self.v_cola.ocupado = lambda: self.corriendo
         self.v_admin = panel_centro.PanelAdmin(self.cont, self.sv)
+        self.v_reportes = panel_centro.PanelReportes(self.cont, self.sv)
         self.v_equipo = panel_centro.PanelEquipo(self.cont, self.sv)
         self.vista_op = self.v_form
         self._mostrar(self.v_cola if centro else self.v_form)
@@ -215,8 +216,10 @@ class App(tk.Tk):
 
             def trabajo(ultima=self._ultima_actividad, ocupado=bool(self.corriendo), pausa=presencia.mi_pausa()):
                 try:
-                    presencia.publicar(carpeta, nombre, ultima, ocupado, pausa=pausa)
+                    reg = presencia.publicar(carpeta, nombre, ultima, ocupado, pausa=pausa)
                     self._publicado = datetime.now()
+                    from hac_zac import reportes
+                    reportes.seguir_conexion(carpeta, nombre, "pausa" if pausa else reg["estado"])
                 except Exception:
                     self._publicado = None
                     from hac_zac import log
@@ -232,8 +235,10 @@ class App(tk.Tk):
     def _alternar_pausa(self):
         """Ponerme en pausa (razon opcional + tiempo) o reanudar. Se publica al equipo de inmediato."""
         from hac_zac import presencia
+        carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+        nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
         if presencia.mi_pausa():
-            presencia.quitar_pausa()
+            presencia.quitar_pausa(carpeta, nombre)              # queda en el reporte de pausas
         else:
             if not (self.sv.ajustes.get("carpeta_equipo") or "").strip():
                 messagebox.showinfo("Pausa", "Para que el admin vea su pausa configure la carpeta del equipo en "
@@ -241,7 +246,7 @@ class App(tk.Tk):
             d = panel.DialogoPausa(self)
             if not d.resultado:
                 return
-            presencia.poner_pausa(*d.resultado)
+            presencia.poner_pausa(d.resultado[0], d.resultado[1], carpeta_equipo=carpeta, nombre=nombre)
         self._publicar_presencia()
         self._pintar_estado(repetir=False)
 
@@ -262,6 +267,8 @@ class App(tk.Tk):
             else:
                 estado = presencia.estado_propio(self._ultima_actividad, bool(self.corriendo), ahora)
                 ayuda = ""
+            if carpeta and nombre and not self.demo:
+                presencia.cerrar_pausa_vencida(carpeta, nombre, ahora)     # se cumplio: al reporte
             pausa = presencia.mi_pausa(ahora)
             color = {"en_linea": C["ok"], "ausente": C["warn"]}.get(estado, C["mut"])
             texto = presencia.ETIQUETA[estado] + (" (%s)" % ayuda if ayuda else "")
@@ -353,7 +360,7 @@ class App(tk.Tk):
         h2.pack(fill="x", padx=26, pady=(0, 8))
         self.tabs = {}
         self._h2 = h2
-        for nombre in ("Operación", "Cola", "Historial", "Equipo", "IP Capa 2", "Admin", "Ajustes"):
+        for nombre in ("Operación", "Cola", "Historial", "Equipo", "IP Capa 2", "Admin", "Reportes", "Ajustes"):
             t = tk.Label(h2, text=nombre, bg=C["bg"], fg=C["mut"], font=(FONT, 11, "bold"),
                          padx=10, pady=2, cursor="hand2")
             t.bind("<Button-1>", lambda e, n=nombre: self._tab(n))
@@ -425,7 +432,7 @@ class App(tk.Tk):
             t.grid_forget()
             if self.centro and n == "Operación":
                 continue
-            if n == "Admin":                      # solo con el rol de administrador (PIN)
+            if n in ("Admin", "Reportes"):        # solo con el rol de administrador (PIN)
                 if admin:
                     t.pack(side="left")
                 continue
@@ -472,7 +479,7 @@ class App(tk.Tk):
 
     def _mostrar(self, vista):
         for v in (self.v_form, self.v_run, self.v_res, self.v_hist, self.v_ips, self.v_aj, self.v_cola, self.v_admin,
-                  self.v_equipo):
+                  self.v_equipo, self.v_reportes):
             v.pack_forget()
         vista.pack(fill="both", expand=True)
         self.after_idle(self._relayout)
@@ -481,7 +488,7 @@ class App(tk.Tk):
             activa = "Operación"
         else:
             activa = {id(self.v_hist): "Historial", id(self.v_aj): "Ajustes", id(self.v_cola): "Cola",
-                      id(self.v_admin): "Admin", id(self.v_equipo): "Equipo"}.get(id(vista), "IP Capa 2")
+                      id(self.v_admin): "Admin", id(self.v_equipo): "Equipo", id(self.v_reportes): "Reportes"}.get(id(vista), "IP Capa 2")
         for n, t in self.tabs.items():
             t.config(fg=C["acc"] if n == activa else C["mut"])
 
@@ -503,6 +510,9 @@ class App(tk.Tk):
         elif nombre == "Equipo":
             self.v_equipo.refrescar()
             self._mostrar(self.v_equipo)
+        elif nombre == "Reportes":
+            self.v_reportes.refrescar()
+            self._mostrar(self.v_reportes)
         else:
             self.v_ips.refrescar()
             self._mostrar(self.v_ips)
@@ -999,6 +1009,14 @@ class App(tk.Tk):
     def _cerrar(self):
         if not self.centro:
             sesion.apagar()
+        carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+        nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
+        if carpeta and nombre and not self.demo:
+            try:
+                from hac_zac import reportes
+                reportes.cerrar_conexion(carpeta, nombre)           # ultimo tramo en el reporte de conexion
+            except Exception:
+                pass
         for v in (self.v_cola, self.v_admin):          # lectores y agente en segundo plano
             try:
                 v.detener_todo()

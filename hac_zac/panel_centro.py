@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Centro de control: 'Cola' (mis solicitudes + lectores) y 'Admin' (ingenieros + agente administrador)."""
+import os
 import queue
 import tkinter as tk
 from tkinter import messagebox
@@ -684,3 +685,93 @@ class PanelAdmin(tk.Frame):
 
     def detener_todo(self):
         pass                                   # el reparto vive en el Lector de SharePoint (pestana Cola)
+
+
+# ======================================================================================= REPORTES (admin)
+class PanelReportes(tk.Frame):
+    """ROL ADMIN: resumen del dia por PEM desde los reportes de la carpeta del equipo (OneDrive).
+    Los archivos completos (pausas, conexion, solicitudes) se abren en Excel con 'Abrir carpeta'."""
+    COLS = ("PEM", "Cerradas", "Exitosas", "No exitosas", "Escalam.", "Prom. min", "Superaron",
+            "Activo (min)", "Ausente (min)", "En pausa (min)", "Pausas")
+
+    def __init__(self, padre, servicio):
+        from datetime import date
+        super().__init__(padre, bg=P.C["bg"])
+        self.sv = servicio
+        self.dia = date.today()
+        _titulo(self, "Reportes", "Resumen del día por PEM. Cada app deja su registro en la carpeta del equipo "
+                "(reportes\pausas_, conexion_ y solicitudes_<mes>_<PEM>.csv), que abre en Excel. Las solicitudes "
+                "se registran al cerrarse (Forms o SharePoint); la conexión, cada vez que cambia el estado.")
+        top = P.ad.Flujo(self, P.C["bg"], hueco=6)
+        top.pack(fill="x")
+        P.BOTON(top, "◀ Día anterior", lambda: self._mover(-1), False, 14).pack(side="left")
+        self.lbl_dia = tk.Label(top, text="", bg=P.C["bg"], fg=P.C["txt"], font=(P.FONT, 11, "bold"), padx=8)
+        self.lbl_dia.pack(side="left")
+        P.BOTON(top, "Día siguiente ▶", lambda: self._mover(1), False, 14).pack(side="left")
+        P.BOTON(top, "Hoy", self._hoy, False, 6).pack(side="left")
+        P.BOTON(top, "Abrir carpeta de reportes", self._abrir, True, 24).pack(side="left")
+        m, self.t = P._tabla(self, self.COLS, (200, 75, 75, 85, 75, 80, 80, 90, 95, 105, 65), alto=10)
+        m.pack(fill="both", expand=True, pady=8)
+        self.t.tag_configure("alerta", foreground=P.C["warn"])
+        self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w",
+                            justify="left")
+        self.lbl.pack(fill="x")
+        P.ad.envolver(self.lbl)
+        self._tarea = None
+        self.refrescar()
+
+    def _mover(self, dias):
+        from datetime import timedelta
+        self.dia += timedelta(days=dias)
+        self.refrescar()
+
+    def _hoy(self):
+        from datetime import date
+        self.dia = date.today()
+        self.refrescar()
+
+    def _carpeta(self):
+        return (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+
+    def _abrir(self):
+        from . import reportes
+        c = self._carpeta()
+        if not c:
+            messagebox.showinfo("Reportes", "Configure la carpeta del equipo en Ajustes.", parent=self)
+            return
+        os.makedirs(reportes.carpeta(c), exist_ok=True)
+        os.startfile(reportes.carpeta(c))
+
+    def refrescar(self):
+        from . import reportes
+        if not self.winfo_exists():
+            return
+        if self._tarea:
+            try:
+                self.after_cancel(self._tarea)
+            except Exception:
+                pass
+        self.lbl_dia.config(text=self.dia.strftime("%d/%m/%Y"))
+        for i in self.t.get_children():
+            self.t.delete(i)
+        c = self._carpeta()
+        if not c:
+            self.lbl.config(text="Configure la carpeta del equipo en Ajustes.", fg=P.C["warn"])
+        else:
+            res = reportes.resumen_dia(c, self.dia)
+            ent = lambda v: ("%d" % round(v)) if v else "—"
+            for nombre in sorted(res, key=str.lower):
+                x = res[nombre]
+                self.t.insert("", "end", tags=("alerta",) if x["superaron"] else (), values=(
+                    nombre, x["cerradas"], x["exitosas"], x["no_exitosas"], x["escalamientos"],
+                    ("%.1f" % x["promedio"]).replace(".", ",") if x["promedio"] else "—", x["superaron"],
+                    ent(x["activo"]), ent(x["ausente"]), ent(x["pausa"]), x["pausas"]))
+            tot = sum(x["cerradas"] for x in res.values())
+            sup = sum(x["superaron"] for x in res.values())
+            self.lbl.config(text=("%d solicitud(es) cerradas · %d superaron el tiempo · %d PEM con registro. "
+                                  "Se actualiza cada minuto." % (tot, sup, len(res))) if res else
+                            "Sin registros ese día.", fg=P.C["mut"])
+        self._tarea = self.after(60000, self.refrescar)
+
+    def detener_todo(self):
+        pass

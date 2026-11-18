@@ -410,6 +410,22 @@ def registrar_mia(d, nombre):
 
 
 @bloqueado
+def poner_origen(id_, origen):
+    """Como llego la solicitud: auto (me la tome), admin (me la repartio el admin), sharepoint (otra persona)."""
+    c = _cola()
+    for s in c["solicitudes"]:
+        if s["id"] == str(id_) and not s.get("origen"):
+            s["origen"] = origen
+            _escribir("cola.json", c)
+            return True
+    return False
+
+
+def solicitud(id_):
+    return next((s for s in solicitudes() if s["id"] == str(id_)), None)
+
+
+@bloqueado
 def registrar_desde_central(d, nombre):
     """Caso que me asigno el servidor central. Queda en mi cola como 'asignada' y marcado origen=central
     (su Est_Seg lo escribe el central, no mi lector de SharePoint). True si es nuevo."""

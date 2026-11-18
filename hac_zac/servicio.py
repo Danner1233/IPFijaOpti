@@ -216,6 +216,7 @@ class Servicio:
                 rec["estado"] = estado_texto(rec)
                 self.store.guardar(rec)
                 self._pedir_estado_sp(rec)
+                self._reportar(rec)
         return r
 
     @staticmethod
@@ -256,6 +257,7 @@ class Servicio:
                               observacion=(observacion or "").strip())
         if rec and cerrada(rec):
             self._pedir_estado_sp(rec)
+            self._reportar(rec)
         return rec
 
     def cerrar_sin_forms(self, key: str):
@@ -268,7 +270,20 @@ class Servicio:
         rec["estado"] = estado_texto(rec)
         self.store.guardar(rec)
         self._pedir_estado_sp(rec)
+        self._reportar(rec)
         return self.store.cargar(key)
+
+    def _reportar(self, rec: dict) -> None:
+        """Cierre de la solicitud en el reporte del equipo (OneDrive): tiempos, resultado, causa y demora."""
+        from . import cola, reportes
+        try:
+            nombre = (self.ajustes.get("pem_nombre") or "").strip() or cola.nombre_configurado()
+            sol = cola.solicitud(rec.get("id")) if rec.get("id") else None
+            if reportes.registrar_solicitud((self.ajustes.get("carpeta_equipo") or "").strip(), nombre, rec, sol):
+                self.store.guardar(rec)
+        except Exception:
+            from . import log
+            log.obtener("servicio").exception("no se pudo dejar la solicitud en el reporte")
 
     # ------------------------------------------------------------------ consulta
     def listar(self, filtro: str = ""):

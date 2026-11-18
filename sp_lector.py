@@ -322,6 +322,22 @@ def leer_items(driver, debug=False):
 MAX_HORAS = 24      # no importa solicitudes mias mas viejas que esto (ya no son "las de ahora")
 
 
+TOMADAS = set()          # IDs que este lector se autoasigno (para el reporte: origen)
+
+
+def origen_de(id_):
+    """auto si me la tome yo; admin si el admin esta repartiendo y me incluye; si no, sharepoint."""
+    if str(id_) in TOMADAS:
+        return "auto"
+    try:
+        aj = cola._leer("ajustes.json", {})
+        if reparto_equipo.lo_reparte_el_admin(aj.get("carpeta_equipo", ""), cola.nombre_configurado()):
+            return "admin"
+    except Exception:
+        pass
+    return "sharepoint"
+
+
 def procesar(items, nombre):
     """Solo toma las solicitudes asignadas a mi nombre (PEM_ASIGNADO), abiertas y recientes."""
     from datetime import datetime
@@ -333,6 +349,7 @@ def procesar(items, nombre):
             continue
         if cola.es_mia(d, nombre) and cola.registrar_mia(d, nombre):
             print("   solicitud mia:", d["id"], "RR", d["rr"])
+            cola.poner_origen(d["id"], origen_de(d["id"]))
             nuevas += 1
     return nuevas
 
@@ -395,7 +412,9 @@ def main():
                         print("   leidas %d solicitudes; ninguna con PEM_ASIGNADO vacio" % len(items))
                     else:
                         print("   hay %d libre(s); tomo la mas antigua" % len(libres))
-                        if tomar_libre(d, items, nombre, a.simular):
+                        tomada = tomar_libre(d, items, nombre, a.simular)
+                        if tomada:
+                            TOMADAS.add(str(tomada))
                             items = leer_items(d)         # releer para ver mi asignacion
                 n = procesar(items, nombre)
                 print(time.strftime("%H:%M:%S"), "mis solicitudes nuevas:", n)
