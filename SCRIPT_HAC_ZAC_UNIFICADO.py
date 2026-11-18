@@ -658,8 +658,13 @@ def mantener_sesion(log=None, abortar=None):
     para atenderla. Devuelve 'ok', 'reconectada', 'interrumpida' o 'sin_conexion'. Nunca lanza error."""
     try:
         if crt.Session.Connected:
-            crt.Screen.Send("\r")
-            return "ok"
+            # El Enter SOLO si el cursor esta en el prompt del jump host sin nada escrito: si alguien dejo un
+            # comando a medias (o la pestana quedo en otro equipo), un Enter lo ejecutaria.
+            base = (JUMP_PROMPT[0] or "").strip()
+            if base and _linea_actual().strip() == base:
+                crt.Screen.Send("\r")
+                return "ok"
+            return "ocupada"
     except Exception:
         return "sin_conexion"
     try:

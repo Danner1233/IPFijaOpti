@@ -16,9 +16,10 @@ def cargar(crt):
     quiero = {"mantener_sesion", "esperar_jump_host", "_linea_actual"}
     nombres_extra = {"_PIDE_DATOS"}
     nodos = [n for n in arbol.body if (isinstance(n, ast.FunctionDef) and n.name in quiero) or
-             (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ({"MANTENER_VIVA_S"} | nombres_extra))]
+             (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ({"MANTENER_VIVA_S", "JUMP_PROMPT"} | nombres_extra))]
     esp = {"crt": crt, "time": getattr(crt, "reloj", time)}
     exec(compile(ast.Module(body=nodos, type_ignores=[]), "script", "exec"), esp)
+    esp["JUMP_PROMPT"][0] = "[user@jump ~]$"           # el script lo recuerda al arrancar
     return esp
 
 
@@ -127,6 +128,30 @@ class PruebasSesionLista(unittest.TestCase):
         r = cargar(c)["mantener_sesion"](None, abortar=lambda: True)
         self.assertEqual(r, "interrumpida")
         self.assertLess(time.time() - t0, 1)
+
+
+class PruebasEnterSeguro(unittest.TestCase):
+    """El Enter para mantener viva la sesion nunca debe ejecutar algo escrito a medias."""
+
+    def _con_linea(self, linea):
+        c = Crt()
+        c.Screen.Get = lambda *a: linea
+        return c
+
+    def test_en_el_prompt_limpio_envia_enter(self):
+        c = self._con_linea("[user@jump ~]$")
+        self.assertEqual(cargar(c)["mantener_sesion"](), "ok")
+        self.assertEqual(c.enviado, [chr(13)])
+
+    def test_comando_a_medias_no_se_ejecuta(self):
+        c = self._con_linea("[user@jump ~]$ ssh 10.20.30.40")
+        self.assertEqual(cargar(c)["mantener_sesion"](), "ocupada")
+        self.assertEqual(c.enviado, [])
+
+    def test_dentro_de_otro_equipo_no_envia(self):
+        c = self._con_linea("OLT-BOG-01(config)#")
+        self.assertEqual(cargar(c)["mantener_sesion"](), "ocupada")
+        self.assertEqual(c.enviado, [])
 
 
 if __name__ == "__main__":

@@ -1135,8 +1135,10 @@ class PanelHistorial(tk.Frame):
         if not rec:
             return
         from datetime import datetime
-        nuevo = "" if rec.get("documentada_en") else datetime.now().isoformat(timespec="seconds")
-        self.sv.actualizar(k, documentada_en=nuevo)
+        if rec.get("documentada_en") or rec.get("cerrada_en"):     # vuelve a pendiente (tambien si se cerro en SP)
+            self.sv.actualizar(k, documentada_en="", cerrada_en="")
+        else:
+            self.sv.actualizar(k, documentada_en=datetime.now().isoformat(timespec="seconds"))
         self.refrescar()
 
     def _eliminar(self):

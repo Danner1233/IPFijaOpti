@@ -13,7 +13,7 @@ import json
 import os
 import re
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime
 
 AUSENTE_S = 5 * 60          # 5 minutos sin usar la app
 DESCONECTADO_S = 3 * 60     # archivo sin actualizar (la app escribe cada 60 s; OneDrive puede tardar)

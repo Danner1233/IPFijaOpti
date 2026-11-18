@@ -515,6 +515,14 @@ def turno(id_):
 
 
 @bloqueado
+def quitar(id_):
+    """Quita la solicitud de MI cola (no toca SharePoint)."""
+    c = _cola()
+    c["solicitudes"] = [x for x in c["solicitudes"] if x["id"] != str(id_)]
+    _escribir("cola.json", c)
+
+
+@bloqueado
 def cambiar_estado(id_, estado):
     c = _cola()
     for s in c["solicitudes"]:

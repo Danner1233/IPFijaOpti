@@ -2,7 +2,7 @@
 """Centro de control: 'Cola' (mis solicitudes + lectores) y 'Admin' (ingenieros + agente administrador)."""
 import queue
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 
 from . import cola
 from . import panel as P
@@ -443,6 +443,10 @@ class PanelCola(tk.Frame):
         s = self._caso()
         if not s:
             return
+        if s["estado"] not in cola.ABIERTOS:
+            messagebox.showinfo("Procesar", "La solicitud %s está «%s»: ya no se procesa." % (
+                s["id"], s["estado"].replace("_", " ")))
+            return
         if not s.get("plantilla"):
             messagebox.showinfo("Procesar", "Esta solicitud todavía no tiene la plantilla del correo.\n"
                                 "Verifique que el Lector de correo esté iniciado.")
@@ -483,9 +487,7 @@ class PanelCola(tk.Frame):
     def _quitar(self):
         s = self._caso()
         if s and messagebox.askyesno("Quitar", "¿Quitar la solicitud %s de la cola? (No toca SharePoint)" % s["id"]):
-            c = cola._cola()
-            c["solicitudes"] = [x for x in c["solicitudes"] if x["id"] != s["id"]]
-            cola._escribir("cola.json", c)
+            cola.quitar(s["id"])                    # con bloqueo: el lector puede estar escribiendo la cola
             self.refrescar()
 
     def detener_todo(self):

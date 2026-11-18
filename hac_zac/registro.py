@@ -6,7 +6,7 @@ las solicitudes guardadas aqui y las de Hendrix son intercambiables.
 """
 from datetime import datetime
 
-from . import estados, evidencias, hw
+from . import evidencias, hw
 from .segmentos import calcular_segmentos, mejor_segmento
 
 URL_VALIDACION_RED = {"ATP": "http://100.123.40.145:8100/", "ONNET": "https://cxm.onnetfibra.co:6443/"}

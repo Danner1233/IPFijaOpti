@@ -100,7 +100,8 @@ const base = arguments[0], ruta = arguments[1], id = arguments[2], campos = argu
     const merge = (body) => fetch(item, {method: 'POST', credentials: 'same-origin', body: JSON.stringify(body), headers: {
       'Accept': 'application/json;odata=nometadata', 'Content-Type': 'application/json;odata=nometadata',
       'X-RequestDigest': digest, 'IF-MATCH': etag, 'X-HTTP-Method': 'MERGE'}});
-    const conNota = (b, n) => { if (n) b.Observaciones = obsAntes ? obsAntes + '\n' + n : n; return b; };
+    const sep = /<(div|p|br)[\s>\/]/i.test(obsAntes) ? '<br>' : '\n';     // texto enriquecido o simple
+    const conNota = (b, n) => { if (n) b.Observaciones = obsAntes ? obsAntes + sep + n : n; return b; };
     let r = await merge(conNota(Object.assign({}, campos), nota));
     let sinCausa = false;
     if (!r.ok && r.status !== 412 && colsCausa.length) {
