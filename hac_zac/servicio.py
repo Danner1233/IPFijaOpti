@@ -18,7 +18,21 @@ from .rutas import data_dir
 from .segmentos import segmento_de_ip
 from .solicitudes import SolicitudStore
 
-AJUSTES_DEFECTO = {"configurador": "DANNER ARIAS", "carpeta_plantillas": "", "formato_carpeta": "%m-%d", "pem_nombre": "", "auto_asignar": True, "securecrt_exe": "", "sesion_crt": "", "servidor_central": "", "carpeta_equipo": "", "rol_admin": False, "admin_pin": "", "admin_repartir": False, "admin_simular": True, "subcarpeta_dia": True, "modo_avanzado": False,
+VIEJO_DEFECTO = "DANNER ARIAS"        # antes venia fijo para todos
+
+
+def configurador_de(aj):
+    """Nombre para la linea CONFIGURADOR: el de Ajustes; si esta vacio (o quedo el viejo valor fijo en el PC de
+    otro PEM), su nombre en SharePoint en mayusculas."""
+    from . import cola
+    conf = " ".join(str(aj.get("configurador") or "").split()).upper()
+    pem = " ".join(str(aj.get("pem_nombre") or "").split()).upper()
+    if conf == VIEJO_DEFECTO and pem and cola._plano(pem) != cola._plano(VIEJO_DEFECTO):
+        conf = ""
+    return conf or pem
+
+
+AJUSTES_DEFECTO = {"configurador": "", "carpeta_plantillas": "", "formato_carpeta": "%m-%d", "pem_nombre": "", "auto_asignar": True, "securecrt_exe": "", "sesion_crt": "", "servidor_central": "", "carpeta_equipo": "", "rol_admin": False, "admin_pin": "", "admin_repartir": False, "admin_simular": True, "subcarpeta_dia": True, "modo_avanzado": False,
                     "auto_procesar": False, "flujo_al_abrir": False, "ver_sp": True, "ver_correo": True, "ver_portal": True}
 
 
@@ -73,7 +87,7 @@ class Servicio:
         m, g, p = mg(ip)
         mb, gb, _ = mg(ipb)
         return pl.DatosPlantilla(
-            configurador=self.ajustes.get("configurador", ""), solicitud=rec.get("txt_sol", ""),
+            configurador=configurador_de(self.ajustes), solicitud=rec.get("txt_sol", ""),
             acs=rec.get("txt_acs", ""), solicitud_id=rec.get("id", ""), dis_cur_int=op.get("bloque_interfaz", ""),
             capa2=op.get("capa2_nombre", ""), capa2_ip=op.get("capa2_ip", ""), rr=rec.get("rr", ""),
             ip=ip, mascara=m, gateway=g, ip_bridge=ipb, mascara_bridge=mb, gateway_bridge=gb, prefijo=p,

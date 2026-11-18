@@ -4,6 +4,7 @@
 
 * ACTIVO   : uso la aplicacion (clic, tecla o rueda) en los ultimos 5 minutos, o tiene un proceso corriendo.
 * AUSENTE  : la aplicacion esta abierta pero lleva 5 minutos sin uso.
+* EN PAUSA : el mismo PEM se puso en pausa (razon opcional y tiempo); vuelve solo al cumplirse.
 * DESCONECTADO: su archivo no se actualiza hace mas de 3 minutos (aplicacion cerrada, PC apagado o sin red).
 
 Tambien se suman los minutos EN LINEA del dia (para medir tiempo).
@@ -54,7 +55,50 @@ def _leer(ruta):
         return {}
 
 
-def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None):
+# ---------------------------------------------------------------------------------------------- pausa
+# El PEM se pone EN PAUSA (almuerzo, reunion...) con razon opcional y un tiempo: no se le reparte ni se autoasigna.
+# Al cumplirse el tiempo vuelve solo a recibir. Se guarda en los datos locales (pausa.json) y se publica al equipo.
+MOTIVOS_PAUSA = ("Almuerzo", "Pausa activa", "Reunión", "Capacitación", "Baño")
+MINUTOS_PAUSA = (15, 30, 60, 90)
+
+
+def pausa_vigente(pausa, ahora=None):
+    """{'hasta','razon','desde'} si la pausa sigue corriendo, si no None."""
+    if not isinstance(pausa, dict):
+        return None
+    hasta = _dt(pausa.get("hasta"))
+    if not hasta or (ahora or datetime.now()) >= hasta:
+        return None
+    return pausa
+
+
+def mi_pausa(ahora=None):
+    from . import cola
+    return pausa_vigente(cola._leer("pausa.json", {}), ahora)
+
+
+def poner_pausa(minutos, razon="", ahora=None):
+    from datetime import timedelta
+    from . import cola
+    ahora = ahora or datetime.now()
+    p = {"desde": _iso(ahora), "hasta": _iso(ahora + timedelta(minutes=int(minutos))),
+         "razon": " ".join(str(razon or "").split())[:80]}
+    cola._escribir("pausa.json", p)
+    return p
+
+
+def quitar_pausa():
+    from . import cola
+    cola._escribir("pausa.json", {})
+
+
+def texto_pausa(pausa):
+    """'⏸ En pausa: Almuerzo (hasta 13:30)'."""
+    h = _dt(pausa.get("hasta"))
+    return ETIQUETA["pausa"] + (": " + pausa["razon"] if pausa.get("razon") else "") +         (" (hasta %s)" % h.strftime("%H:%M") if h else "")
+
+
+def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, pausa=None):
     """Escribe mi estado y suma mis minutos en linea de hoy. Devuelve el registro escrito.
     Si hay dos ventanas abiertas en este PC (script y centro de control), se toma la actividad mas reciente y el
     tiempo no se cuenta doble (se suma desde el ultimo 'tick' guardado, no por ventana)."""
@@ -76,6 +120,9 @@ def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None):
     reg = {"nombre": " ".join(str(nombre).split()), "estado": estado, "pc": pc, "fecha": hoy,
            "ultima_actividad": _iso(ultima_actividad) if ultima_actividad else "",
            "tick": _iso(ahora), "actualizado": _iso(ahora), "en_linea_hoy_s": int(segundos)}
+    pausa = pausa_vigente(pausa, ahora)
+    if pausa:
+        reg["pausa"] = {"hasta": pausa.get("hasta", ""), "razon": pausa.get("razon", "")}
     tmp = ruta + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(reg, f, ensure_ascii=False, indent=1)
@@ -98,13 +145,19 @@ def equipo(carpeta_equipo, ahora=None):
             continue
         act = _dt(r.get("actualizado"))
         estado = r.get("estado") or "ausente"
+        pausa = None
         if not act or (ahora - act).total_seconds() > DESCONECTADO_S:
             estado = "desconectado"
+        else:
+            pausa = pausa_vigente(r.get("pausa"), ahora)
+            if pausa:
+                estado = "pausa"            # abierta pero en pausa: no se le reparte
         hoy = r.get("fecha") == ahora.date().isoformat()
         out.append({"nombre": r["nombre"], "estado": estado, "ultima_actividad": r.get("ultima_actividad") or "",
                     "actualizado": r.get("actualizado") or "",
-                    "en_linea_hoy_min": int((r.get("en_linea_hoy_s") or 0) / 60) if hoy else 0})
-    orden = {"en_linea": 0, "ausente": 1, "desconectado": 2}
+                    "en_linea_hoy_min": int((r.get("en_linea_hoy_s") or 0) / 60) if hoy else 0,
+                    "pausa": pausa})
+    orden = {"en_linea": 0, "pausa": 1, "ausente": 2, "desconectado": 3}
     return sorted(out, key=lambda x: (orden.get(x["estado"], 3), x["nombre"].lower()))
 
 
@@ -123,4 +176,4 @@ def hace(iso, ahora=None):
     return d.strftime("%d/%m %H:%M")
 
 
-ETIQUETA = {"en_linea": "● Activo", "ausente": "◐ Ausente", "desconectado": "○ Desconectado"}
+ETIQUETA = {"en_linea": "● Activo", "ausente": "◐ Ausente", "desconectado": "○ Desconectado", "pausa": "⏸ En pausa"}

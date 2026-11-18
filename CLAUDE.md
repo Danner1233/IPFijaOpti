@@ -35,7 +35,7 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
   (en cada vuelta si ajustes rol_admin + admin_repartir; admin_simular por defecto True), `PanelAdmin` (pestaña solo con
   rol_admin). Liberar deja nota "PEM X: liberó la solicitud" en Observaciones. `admin_agente.py` quedó obsoleto.
 - `sp_lector.py`: lee la lista de SharePoint con Selenium y escribe estados (REST/ETag).
-- `correo_lector.py`: busca en Outlook web la cuenta RR, abre los correos y confirma el SOLICITUD ID exacto antes de guardar la plantilla. Refresca cada 60 s.
+- `correo_lector.py`: busca en Outlook web la cuenta RR, abre los correos y confirma el SOLICITUD ID exacto antes de guardar la plantilla. Cada 15 s con pendientes, si no cada 60 s (`espera_siguiente`).
 - `portal_csr.py`: consulta del Support Portal por serial o MAC.
 - `navegador.py`: abre Chrome con perfil persistente en `%LOCALAPPDATA%\hac_zac\`; mostrar u ocultar ventana moviéndola fuera de pantalla (no headless).
 - `ms_login.py` / `ms_numero.py`: inicio de sesión automático de Microsoft y ventana con el número de MFA.

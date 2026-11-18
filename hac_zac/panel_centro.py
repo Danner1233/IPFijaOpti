@@ -506,11 +506,13 @@ class PanelEquipo(tk.Frame):
         self.sv = servicio
         _titulo(self, "Equipo", "Quién está usando el optimizador (estado automático, nadie lo puede cambiar a mano). Activo: usó la aplicación en los últimos 5 "
                 "minutos o tiene un proceso corriendo. Ausente: la tiene abierta pero lleva 5 minutos sin usarla. "
+                "En pausa: el PEM se puso en pausa (almuerzo, reunión...) y no recibe solicitudes. "
                 "Desconectado: cerró la aplicación o su PC no sincroniza.")
         m, self.t = P._tabla(self, self.COLS, (260, 150, 160, 130), alto=10)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("en_linea", foreground=P.C["ok"])
         self.t.tag_configure("ausente", foreground=P.C["warn"])
+        self.t.tag_configure("pausa", foreground=P.C["warn"])
         self.t.tag_configure("desconectado", foreground=P.C["mut"])
         self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w",
                             justify="left")
@@ -538,12 +540,14 @@ class PanelEquipo(tk.Frame):
             filas = presencia.equipo(carpeta)
             for f in filas:
                 self.t.insert("", "end", tags=(f["estado"],), values=(
-                    f["nombre"], presencia.ETIQUETA.get(f["estado"], f["estado"]),
+                    f["nombre"], presencia.texto_pausa(f["pausa"]) if f.get("pausa") else
+                    presencia.ETIQUETA.get(f["estado"], f["estado"]),
                     presencia.hace(f["ultima_actividad"]),
                     ("%d h %02d min" % divmod(f["en_linea_hoy_min"], 60)) if f["en_linea_hoy_min"] else "—"))
             n = sum(1 for f in filas if f["estado"] == "en_linea")
-            self.lbl.config(text="%d activo(s) · %d ausente(s) · %d desconectado(s) · se actualiza cada 30 s" % (
-                n, sum(1 for f in filas if f["estado"] == "ausente"),
+            self.lbl.config(text="%d activo(s) · %d en pausa · %d ausente(s) · %d desconectado(s) · se actualiza "
+                                 "cada 30 s" % (
+                n, sum(1 for f in filas if f["estado"] == "pausa"), sum(1 for f in filas if f["estado"] == "ausente"),
                 sum(1 for f in filas if f["estado"] == "desconectado")) if filas else
                 "Nadie ha publicado su estado todavía en esa carpeta.", fg=P.C["mut"])
         self._tarea = self.after(30000, self.refrescar)
@@ -571,7 +575,7 @@ class PanelAdmin(tk.Frame):
         P.BOTON(top, "Agregar", self._agregar, True, 10).pack(side="left", padx=6)
         P.BOTON(top, "Activar / Desactivar", self._alternar, False, 20).pack(side="left")
         P.BOTON(top, "Quitar", self._quitar, False, 9).pack(side="left", padx=6)
-        m, self.t = P._tabla(self, self.COLS, (300, 140, 150, 150), alto=9)
+        m, self.t = P._tabla(self, self.COLS, (260, 120, 260, 130), alto=9)
         m.pack(fill="x", pady=8)
         for tag, color in (("on", P.C["ok"]), ("off", P.C["mut"]), ("lejos", P.C["warn"])):
             self.t.tag_configure(tag, foreground=color)
@@ -613,7 +617,8 @@ class PanelAdmin(tk.Frame):
                 pass
         aj = self.sv.ajustes
         carpeta = (aj.get("carpeta_equipo") or "").strip()
-        pres = reparto_equipo.presencia_por_nombre(carpeta) if carpeta else {}
+        filas_eq = {cola._plano(r["nombre"]): r for r in presencia.equipo(carpeta)} if carpeta else {}
+        pres = {k: r["estado"] for k, r in filas_eq.items()}
         sel = self.t.selection()
         for i in self.t.get_children():
             self.t.delete(i)
@@ -621,10 +626,16 @@ class PanelAdmin(tk.Frame):
         for p in roster:
             est = pres.get(cola._plano(p["nombre"]), "")
             tag = "off" if not p.get("activo") else ("on" if est == "en_linea" else "lejos")
+            fila = filas_eq.get(cola._plano(p["nombre"])) or {}
+            if not carpeta:
+                en_app = "— (sin carpeta)"
+            elif est == "pausa" and fila.get("pausa"):
+                en_app = presencia.texto_pausa(fila["pausa"])        # se puso inactivo el mismo PEM
+            else:
+                en_app = presencia.ETIQUETA.get(est, "○ Sin dato")
             self.t.insert("", "end", iid=p["nombre"], tags=(tag,), values=(
-                p["nombre"], "● Activo" if p.get("activo") else "○ Inactivo",
-                presencia.ETIQUETA.get(est, "○ Sin dato") if carpeta else "— (sin carpeta)",
-                (p.get("ultimo") or "—").replace("T", " ")[5:16]))
+                p["nombre"], "● Activo" if p.get("activo") else "○ Inactivo", en_app,
+                p["ultimo"].replace("T", " ")[5:16] if p.get("ultimo") else "—"))
         if sel and self.t.exists(sel[0]):
             self.t.selection_set(sel[0])
         listos = [p["nombre"] for p in roster if p.get("activo") and pres.get(cola._plano(p["nombre"])) == "en_linea"]

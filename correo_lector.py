@@ -3,7 +3,7 @@
 asigno en SharePoint (por cuenta RR) y guarda la plantilla completa en la cola. No abre los demas correos.
 
 Primera vez:  python correo_lector.py --ver        (inicie sesion en Outlook en la ventana y pulse Enter)
-Despues:      python correo_lector.py              (busca cada minuto la cuenta RR de sus solicitudes, en segundo plano)
+Despues:      python correo_lector.py              (busca la cuenta RR de sus solicitudes: cada 15 s si hay pendientes, si no cada minuto)
 Diagnostico:  python correo_lector.py --una --debug   (guarda outlook_debug_lista.html y outlook_debug_mensaje.txt;
               si no encuentra el buscador, filas o texto: outlook_debug_diagnostico.txt, _pagina.html, _pantalla.png)
 Prueba:       python correo_lector.py --archivo correo.txt    (sin navegador)
@@ -65,7 +65,9 @@ def hora_de(etiqueta):
         return None
 
 
-CADA_S = 60            # el correo se actualiza y se busca cada 1 minuto
+CADA_S = 60            # sin nada pendiente: el correo se actualiza cada 1 minuto
+RAPIDO_S = 15          # con una solicitud esperando su plantilla: se busca cada 15 s
+PASO_S = 5             # mientras espera, cada 5 s mira si llego una solicitud nueva (y busca de una vez)
 MAX_RESULTADOS = 8     # correos que se abren por busqueda (los mas recientes de esa cuenta RR)
 
 ESPERA_LISTA_S = 12    # maximo que se espera a que Outlook muestre los resultados de la busqueda
@@ -135,6 +137,20 @@ def elegir_texto(textos, sol_id):
         if i:
             return t
     return textos[0] if textos else ""
+
+
+def espera_siguiente(hay_pendientes, cada=CADA_S, rapido=RAPIDO_S, paso=PASO_S, dormir=time.sleep):
+    """Pausa entre revisiones. Con algo pendiente: `rapido` s (el correo llega 3-4 min despues de asignarse, asi
+    se guarda en cuanto entra). Sin nada: hasta `cada` s, pero sale apenas aparezca una solicitud nueva.
+    Devuelve los segundos esperados."""
+    hay = bool(hay_pendientes())
+    total, t = (min(rapido, cada) if hay else cada), 0
+    while t < total:
+        dormir(min(paso, total - t))
+        t += min(paso, total - t)
+        if not hay and hay_pendientes():
+            break
+    return t
 
 
 def esperar(condicion, maximo, paso=0.5, dormir=time.sleep):
@@ -357,7 +373,7 @@ def main():
     ap.add_argument("--una", action="store_true")
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--archivo", help="texto de un correo guardado (prueba sin navegador)")
-    ap.add_argument("--cada", type=int, default=CADA_S, help="segundos entre revisiones (60 = cada minuto)")
+    ap.add_argument("--cada", type=int, default=CADA_S, help="segundos entre revisiones sin nada pendiente (con pendientes: %d s)" % RAPIDO_S)
     a = ap.parse_args()
 
     if a.archivo:
@@ -379,7 +395,7 @@ def main():
             try:
                 aplicar_visibilidad(d, "correo")
                 try:
-                    d.get(URL)                    # actualiza la bandeja (cada minuto)
+                    d.get(URL)                    # actualiza la bandeja
                     time.sleep(3)
                 except Exception:
                     pass
@@ -390,7 +406,7 @@ def main():
                 _LOG.exception("error en el ciclo del lector")
             if a.una:
                 break
-            time.sleep(a.cada)
+            espera_siguiente(cola.pendientes_correo, a.cada)
     finally:
         d.quit()
 

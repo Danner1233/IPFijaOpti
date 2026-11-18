@@ -213,18 +213,39 @@ class App(tk.Tk):
         if carpeta and nombre:
             from hac_zac import presencia
 
-            def trabajo(ultima=self._ultima_actividad, ocupado=bool(self.corriendo)):
+            def trabajo(ultima=self._ultima_actividad, ocupado=bool(self.corriendo), pausa=presencia.mi_pausa()):
                 try:
-                    presencia.publicar(carpeta, nombre, ultima, ocupado)
+                    presencia.publicar(carpeta, nombre, ultima, ocupado, pausa=pausa)
                     self._publicado = datetime.now()
                 except Exception:
                     self._publicado = None
                     from hac_zac import log
                     log.obtener("presencia").warning("no se pudo publicar en %s", carpeta, exc_info=True)
             threading.Thread(target=trabajo, daemon=True).start()
-        self.after(60000, self._publicar_presencia)
+        if getattr(self, "_tarea_pres", None):
+            try:
+                self.after_cancel(self._tarea_pres)
+            except Exception:
+                pass
+        self._tarea_pres = self.after(60000, self._publicar_presencia)
 
-    def _pintar_estado(self):
+    def _alternar_pausa(self):
+        """Ponerme en pausa (razon opcional + tiempo) o reanudar. Se publica al equipo de inmediato."""
+        from hac_zac import presencia
+        if presencia.mi_pausa():
+            presencia.quitar_pausa()
+        else:
+            if not (self.sv.ajustes.get("carpeta_equipo") or "").strip():
+                messagebox.showinfo("Pausa", "Para que el admin vea su pausa configure la carpeta del equipo en "
+                                    "Ajustes. La pausa igual evita que usted se autoasigne.", parent=self)
+            d = panel.DialogoPausa(self)
+            if not d.resultado:
+                return
+            presencia.poner_pausa(*d.resultado)
+        self._publicar_presencia()
+        self._pintar_estado(repetir=False)
+
+    def _pintar_estado(self, repetir=True):
         """Cada 5 s: mi estado (solo lectura). Desconectado si no hay carpeta/nombre o no se pudo publicar."""
         from hac_zac import presencia
         try:
@@ -241,11 +262,21 @@ class App(tk.Tk):
             else:
                 estado = presencia.estado_propio(self._ultima_actividad, bool(self.corriendo), ahora)
                 ayuda = ""
+            pausa = presencia.mi_pausa(ahora)
             color = {"en_linea": C["ok"], "ausente": C["warn"]}.get(estado, C["mut"])
-            self.lbl_estado.config(text=presencia.ETIQUETA[estado] + (" (%s)" % ayuda if ayuda else ""), fg=color)
+            texto = presencia.ETIQUETA[estado] + (" (%s)" % ayuda if ayuda else "")
+            if pausa:
+                texto, color = presencia.texto_pausa(pausa), C["warn"]
+            self.lbl_estado.config(text=texto, fg=color)
+            self.b_pausa.config(text="▶ Reanudar" if pausa else "⏸ Pausa",
+                                bg=C["acc"] if pausa else C["card2"], fg=C["on_acc"] if pausa else C["warn"])
+            if getattr(self, "_en_pausa", False) and not pausa:
+                self._publicar_presencia()              # se cumplio el tiempo: avisar al equipo ya
+            self._en_pausa = bool(pausa)
         except Exception:
             pass
-        self.after(5000, self._pintar_estado)
+        if repetir:
+            self.after(5000, self._pintar_estado)
 
     # ---------- base ----------
     def _al_mostrar(self, e=None):
@@ -308,6 +339,12 @@ class App(tk.Tk):
         self.lbl_estado = tk.Label(h, text="○ Desconectado", bg=C["bg"], fg=C["mut"], font=(FONT, 10, "bold"),
                                    padx=6, pady=3)
         self.lbl_estado.pack(side="right", padx=(8, 0))
+        # Pausa: lo UNICO que el PEM decide de su estado (almuerzo, reunion...). No recibe solicitudes mientras dure.
+        self.b_pausa = tk.Label(h, text="⏸ Pausa", bg=C["card2"], fg=C["warn"], font=(FONT, 10, "bold"),
+                                padx=10, pady=3, cursor="hand2")
+        if not self.demo:
+            self.b_pausa.pack(side="right", padx=(8, 0))
+        self.b_pausa.bind("<Button-1>", lambda e: self._alternar_pausa())
         # el subtitulo se oculta si la ventana es angosta
         h.bind("<Configure>", lambda e: (sub.pack_forget() if e.width < ad.px(640) else
                                          (sub.pack(side="left", pady=(8, 0)) if not sub.winfo_ismapped() else None)))

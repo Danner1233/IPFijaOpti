@@ -887,6 +887,53 @@ class DialogoResultado(tk.Toplevel):
         self.destroy()
 
 
+class DialogoPausa(tk.Toplevel):
+    """El PEM se pone EN PAUSA: razon opcional y cuanto tiempo. self.resultado = (minutos, razon) o None."""
+
+    def __init__(self, padre):
+        from . import presencia
+        super().__init__(padre)
+        self.resultado = None
+        self.title("Ponerme en pausa")
+        self.configure(bg=C["bg"])
+        self.transient(padre.winfo_toplevel())
+        caja = tk.Frame(self, bg=C["bg"])
+        caja.pack(fill="both", expand=True, padx=ad.px(22), pady=ad.px(18))
+        tk.Label(caja, text="⏸ Ponerme en pausa", bg=C["bg"], fg=C["txt"], font=(FONT, 12, "bold"),
+                 anchor="w").pack(fill="x")
+        tk.Label(caja, text="Mientras esté en pausa no le llegan solicitudes (ni del admin ni autoasignadas). "
+                 "Al cumplirse el tiempo vuelve a recibir solo.", bg=C["bg"], fg=C["mut"], font=(FONT, 9),
+                 anchor="w", justify="left", wraplength=ad.px(420)).pack(fill="x", pady=(4, 10))
+        tk.Label(caja, text="Razón (opcional):", bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"),
+                 anchor="w").pack(fill="x")
+        self.razon = ttk.Combobox(caja, values=presencia.MOTIVOS_PAUSA, font=(FONT, 10), width=34)
+        self.razon.pack(fill="x", pady=(4, 10), ipady=3)
+        tk.Label(caja, text="¿Cuánto tiempo?", bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"),
+                 anchor="w").pack(fill="x")
+        self.min = tk.IntVar(value=60)
+        fila = ad.Flujo(caja, C["bg"], hueco=8)
+        fila.pack(fill="x", pady=(4, 10))
+        for m in presencia.MINUTOS_PAUSA:
+            tk.Radiobutton(fila, text=("%d min" % m) if m < 60 else ("%g h" % (m / 60.0)), variable=self.min,
+                           value=m, bg=C["bg"], fg=C["txt"], activebackground=C["bg"], selectcolor=C["card"],
+                           font=(FONT, 10), bd=0, highlightthickness=0).pack(side="left")
+        b = ad.Flujo(caja, C["bg"])
+        b.pack(fill="x", pady=(6, 0))
+        BOTON(b, "Ponerme en pausa", self._aceptar, True, 18).pack(side="left")
+        BOTON(b, "Cancelar", self.destroy, False, 10).pack(side="left", padx=6)
+        self.razon.bind("<Return>", lambda e: self._aceptar())
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.update_idletasks()
+        self.minsize(min(ad.px(440), self.winfo_screenwidth() - 40), self.winfo_reqheight())
+        self.grab_set()
+        self.razon.focus_set()
+        self.wait_window()
+
+    def _aceptar(self):
+        self.resultado = (int(self.min.get()), self.razon.get().strip())
+        self.destroy()
+
+
 class DialogoDemora(tk.Toplevel):
     """Justificacion OBLIGATORIA cuando una solicitud supero el tiempo de gestion.
     Red CLARO: hasta 5 fotos (y una nota opcional). Redes neutras (ATP/ONNET): observacion escrita.
@@ -1230,6 +1277,8 @@ class PanelAjustes(tk.Frame):
         self._bloque("Carpeta del equipo", "Carpeta de OneDrive/SharePoint que TODOS los PEM tienen sincronizada. "
                      "Ahí cada uno publica si está en línea (pestaña Equipo). Requiere su nombre en SharePoint "
                      "(funciones avanzadas).", (("carpeta_equipo", "Carpeta", False),))
+        self._bloque("Nombre del configurador", "Va en la línea CONFIGURADOR: de la plantilla. Si lo deja vacío se usa "
+                     "su nombre en SharePoint en mayúsculas.", (("configurador", "Nombre", False),))
         # ---- avanzado
         self.avz = tk.BooleanVar(value=False)
         tk.Checkbutton(self, text="Mostrar funciones avanzadas (Cola, Admin, IP Capa 2)", variable=self.avz,
@@ -1448,6 +1497,7 @@ class PanelAjustes(tk.Frame):
         datos["sesion_crt"] = aj.get("sesion_crt", "")
         datos["servidor_central"] = aj.get("servidor_central", "")
         datos["carpeta_equipo"] = aj.get("carpeta_equipo", "")
+        datos["configurador"] = aj.get("configurador", "")
         self.auto.set(bool(aj.get("auto_asignar", False)))
         self.sub.set(bool(aj.get("subcarpeta_dia", True)))
         self.avz.set(bool(aj.get("modo_avanzado", False)))
@@ -1474,6 +1524,7 @@ class PanelAjustes(tk.Frame):
                 self.sv.ajustes["sesion_crt"] = self.campos["sesion_crt"].get().strip()
                 self.sv.ajustes["servidor_central"] = self.campos["servidor_central"].get().strip()
                 self.sv.ajustes["carpeta_equipo"] = self.campos["carpeta_equipo"].get().strip()
+                self.sv.ajustes["configurador"] = " ".join(self.campos["configurador"].get().split()).upper()
                 self.sv.ajustes["auto_asignar"] = bool(self.auto.get())
                 guardar_ajustes(self.sv.ajustes)
             self.lbl.config(text="Guardado", fg=C["ok"])

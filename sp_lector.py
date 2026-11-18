@@ -18,7 +18,7 @@ import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, AQUI)
-from hac_zac import cola, reparto_equipo
+from hac_zac import cola, presencia, reparto_equipo
 from hac_zac import log as _log
 
 _LOG = _log.obtener('sp_lector')  # noqa: E402
@@ -376,7 +376,10 @@ def main():
                 aj = cola._leer("ajustes.json", {})
                 if repartir_equipo(d, items, aj):          # rol admin: reparte entre los PEM activos y en linea
                     items = leer_items(d)
-                if reparto_equipo.lo_reparte_el_admin(aj.get("carpeta_equipo", ""), nombre):
+                if presencia.mi_pausa():
+                    if a.tomar or cola.auto_asignar_configurado():
+                        print("   estoy EN PAUSA: no me autoasigno")
+                elif reparto_equipo.lo_reparte_el_admin(aj.get("carpeta_equipo", ""), nombre):
                     if a.tomar or cola.auto_asignar_configurado():
                         print("   el admin reparte las solicitudes: no me autoasigno")
                 elif a.tomar or cola.auto_asignar_configurado():
