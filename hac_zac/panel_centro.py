@@ -700,7 +700,7 @@ class PanelReportes(tk.Frame):
         self.sv = servicio
         self.dia = date.today()
         _titulo(self, "Reportes", "Resumen del día por PEM. Cada app deja su registro en la carpeta del equipo "
-                "(reportes\pausas_, conexion_ y solicitudes_<mes>_<PEM>.csv), que abre en Excel. Las solicitudes "
+                "(carpeta «reportes»: pausas_, conexion_ y solicitudes_<mes>_<PEM>.csv), que abre en Excel. Las solicitudes "
                 "se registran al cerrarse (Forms o SharePoint); la conexión, cada vez que cambia el estado.")
         top = P.ad.Flujo(self, P.C["bg"], hueco=6)
         top.pack(fill="x")
