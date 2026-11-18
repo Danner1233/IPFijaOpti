@@ -4,7 +4,7 @@ sin permisos de administrador) y mete las solicitudes nuevas en la cola.
 
 Solo toma las solicitudes asignadas a MI nombre (columna PEM_ASIGNADO).
 Primera vez:  python sp_lector.py --nombre "Nombre Apellido" --ver      (se abre Chrome: inicie sesion y resuelva el MFA; queda guardado)
-Despues:      python sp_lector.py            (vigila la lista cada 20 s, en segundo plano)
+Despues:      python sp_lector.py            (vigila la lista cada 7 s, en segundo plano)
 Una vez:      python sp_lector.py --una --debug   (guarda sp_debug.json con los datos crudos)
 Prueba:       python sp_lector.py --archivo items.json   (sin navegador)
 
@@ -319,6 +319,8 @@ def leer_items(driver, debug=False):
                                                                     driver.current_url[:80]))
 
 
+CADA_S = 7          # cada vuelta: lee la lista (REST), reparte (admin) y ve si me asignaron algo
+REFRESCAR_S = 300   # la pagina solo se recarga cada 5 min (la lectura es por REST: no necesita recargar)
 MAX_HORAS = 24      # no importa solicitudes mias mas viejas que esto (ya no son "las de ahora")
 
 
@@ -360,7 +362,7 @@ def main():
     ap.add_argument("--una", action="store_true", help="leer una sola vez")
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--archivo", help="usar un JSON de items en vez del navegador")
-    ap.add_argument("--cada", type=int, default=20)
+    ap.add_argument("--cada", type=int, default=CADA_S, help="segundos entre vueltas (por defecto %d)" % CADA_S)
     ap.add_argument("--tomar", action="store_true", help="asignarme solo una solicitud libre cuando no tengo ninguna")
     ap.add_argument("--simular", action="store_true", help="con --tomar: solo mostrar cual me asignaria, sin escribir")
     ap.add_argument("--nombre", help="mi nombre como aparece en PEM_ASIGNADO (si no, ajustes.json: pem_nombre)")
@@ -383,6 +385,7 @@ def main():
     if not ms_login.asegurar_sesion(d, url_es_sharepoint, cr.get("ms_usuario", ""), cr.get("ms_clave", ""),
                                     mostrar=lambda: aplicar_visibilidad(d, "sp", True)):
         print("No se pudo iniciar sesion en SharePoint en 5 minutos; se intentara en cada ciclo.")
+    recargada = time.time()
     try:
         while True:
             try:
@@ -421,12 +424,15 @@ def main():
             except Exception as e:
                 print(time.strftime("%H:%M:%S"), "error:", e)
                 _LOG.exception("error en el ciclo del lector")
+                recargada = 0                         # tras un error se recarga ya (p. ej. la sesion vencio)
             if a.una:
                 break
-            try:
-                d.refresh()                           # recarga la pagina cada vuelta (cada 20 s)
-            except Exception:
-                pass
+            if time.time() - recargada >= REFRESCAR_S:
+                try:
+                    d.refresh()                       # mantiene viva la sesion; la lectura no lo necesita
+                except Exception:
+                    pass
+                recargada = time.time()
             time.sleep(a.cada)
     finally:
         d.quit()
