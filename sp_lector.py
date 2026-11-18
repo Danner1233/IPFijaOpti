@@ -18,7 +18,7 @@ import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, AQUI)
-from hac_zac import cola
+from hac_zac import cola, reparto_equipo
 from hac_zac import log as _log
 
 _LOG = _log.obtener('sp_lector')  # noqa: E402
@@ -118,7 +118,7 @@ const base = arguments[0], ruta = arguments[1], id = arguments[2], campos = argu
 # Devuelve la solicitud (Sin Asignar): solo si sigue asignada a MI nombre.
 JS_LIBERAR = r"""
 const cb = arguments[arguments.length - 1];
-const base = arguments[0], ruta = arguments[1], id = arguments[2], nombre = arguments[3];
+const base = arguments[0], ruta = arguments[1], id = arguments[2], nombre = arguments[3], nota = arguments[4] || '';
 (async () => {
   try {
     const h = {'Accept': 'application/json;odata=minimalmetadata'};
@@ -134,7 +134,9 @@ const base = arguments[0], ruta = arguments[1], id = arguments[2], nombre = argu
     }
     const etag = j['odata.etag'] || g.headers.get('ETag');
     const r = await fetch(item, {method: 'POST', credentials: 'same-origin',
-      body: JSON.stringify({PEM_ASIGNADO: null, Est_Seg: 'Sin Asignar'}), headers: {
+      body: JSON.stringify(Object.assign({PEM_ASIGNADO: null, Est_Seg: 'Sin Asignar'}, nota ? {Observaciones:
+        (j.Observaciones ? j.Observaciones + (/<(div|p|br)[\s>\/]/i.test(j.Observaciones) ? '<br>' : '\n') : '') + nota}
+        : {})), headers: {
       'Accept': 'application/json;odata=nometadata', 'Content-Type': 'application/json;odata=nometadata',
       'X-RequestDigest': digest, 'IF-MATCH': etag, 'X-HTTP-Method': 'MERGE'}});
     cb({ok: r.ok, status: r.status, antes: j.Est_Seg || '', motivo: r.ok ? '' : (await r.text()).slice(0, 200)});
@@ -199,7 +201,11 @@ def enviar_liberaciones(driver):
     n = 0
     for id_, p in cola.liberar_pendientes().items():
         try:
-            r = driver.execute_async_script(JS_LIBERAR, BASE_ITEMS, RUTA_SITIO, id_, p.get("pem", ""))
+            from datetime import datetime
+            from hac_zac import reparto_equipo
+            nota = "[%s] PEM %s: liberó la solicitud" % (datetime.now().strftime("%d/%m %H:%M"), p.get("pem", ""))
+            assert reparto_equipo.NOTA_LIBERO in cola._plano(nota)     # el reparto la reconoce y no se la devuelve
+            r = driver.execute_async_script(JS_LIBERAR, BASE_ITEMS, RUTA_SITIO, id_, p.get("pem", ""), nota)
         except Exception as e:
             r = {"ok": False, "motivo": str(e)}
         cola.resultado_liberar(id_, r.get("ok"), r.get("motivo", ""))
@@ -226,6 +232,45 @@ def asignar_item(driver, it, nombre, simular=False):
         return it["ID"]
     print("   no pude asignar la", it["ID"], "a", nombre, "->", r.get("motivo"))
     return None
+
+
+def es_admin_repartiendo(aj):
+    return bool(aj.get("rol_admin") and aj.get("admin_repartir"))
+
+
+def repartir_equipo(driver, items, aj, log=print):
+    """ROL ADMIN: reparte las libres entre los PEM de la lista (activos por el admin y Activos en la app), una a
+    la vez y por turno. Publica la lista en la carpeta del equipo para que esos PEM no se autoasignen.
+    En simulacion solo muestra a quien asignaria (y no publica). Devuelve las asignadas [(id, nombre)]."""
+    from datetime import datetime
+    if not es_admin_repartiendo(aj):
+        return []
+    carpeta = aj.get("carpeta_equipo", "")
+    roster = cola.ingenieros()
+    simular = bool(aj.get("admin_simular"))
+    if not carpeta:
+        log("   [admin] falta la carpeta del equipo en Ajustes: no se puede ver quien esta en linea")
+        return []
+    plan = reparto_equipo.plan(items, roster, reparto_equipo.presencia_por_nombre(carpeta))
+    hechas = []
+    for it, nombre in plan:
+        if simular:
+            log("   [admin simulacion] solicitud %s -> %s" % (it.get("ID"), nombre))
+            continue
+        if asignar_item(driver, it, nombre):
+            hechas.append((str(it.get("ID")), nombre))
+            for p in roster:
+                if p["nombre"] == nombre:
+                    p["ultimo"] = datetime.now().isoformat(timespec="seconds")
+            log("   [admin] solicitud %s asignada a %s" % (it.get("ID"), nombre))
+    if hechas:
+        cola.guardar_ingenieros(roster)
+    if not simular:
+        try:
+            reparto_equipo.publicar(carpeta, roster, aj.get("pem_nombre", ""))
+        except OSError as e:
+            log("   [admin] no pude publicar el reparto en la carpeta del equipo: %s" % e)
+    return hechas
 
 
 def tomar_libre(driver, items, nombre, simular=False):
@@ -328,7 +373,13 @@ def main():
                 if enviar_estados_pendientes(d) + enviar_liberaciones(d):
                     time.sleep(1)
                 items = leer_items(d, a.debug)
-                if a.tomar or cola.auto_asignar_configurado():
+                aj = cola._leer("ajustes.json", {})
+                if repartir_equipo(d, items, aj):          # rol admin: reparte entre los PEM activos y en linea
+                    items = leer_items(d)
+                if reparto_equipo.lo_reparte_el_admin(aj.get("carpeta_equipo", ""), nombre):
+                    if a.tomar or cola.auto_asignar_configurado():
+                        print("   el admin reparte las solicitudes: no me autoasigno")
+                elif a.tomar or cola.auto_asignar_configurado():
                     abiertas = cola.mis_casos(nombre)
                     sin_cerrar = cola.abiertas_sp(items, nombre, MAX_HORAS)
                     libres = [x for x in items if cola.es_libre(x)]

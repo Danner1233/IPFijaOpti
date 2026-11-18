@@ -110,7 +110,11 @@ class PruebasEnvio(unittest.TestCase):
         self.assertEqual(cola.solicitudes()[0]["estado"], "liberada")
         d = Driver({"ok": True, "antes": "Asignada"})
         self.assertEqual(sp_lector.enviar_liberaciones(d), 1)
-        self.assertEqual(d.llamadas[0][1][2:], ("64902", "Ana"))
+        self.assertEqual(d.llamadas[0][1][2:4], ("64902", "Ana"))
+        nota = d.llamadas[0][1][4]
+        self.assertIn("PEM Ana: liberó la solicitud", nota, "nota para que el reparto no se la devuelva")
+        from hac_zac import reparto_equipo
+        self.assertEqual(reparto_equipo.liberadores({"Observaciones": nota}), {"ana"})
         self.assertEqual(cola.liberar_pendientes(), {})
         self.assertEqual(cola.elegir_libre([it, otra])["ID"], 64903, "no se retoma la que libere")
 

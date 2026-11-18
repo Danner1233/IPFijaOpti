@@ -1245,6 +1245,7 @@ class PanelAjustes(tk.Frame):
         self._bloque("Reparto central", "Dirección del servidor central (ej. http://PC-OFICINA:8765) y su token personal "
                      "(se lo da el administrador). Con esto ya no usa SharePoint: reabra la aplicación al guardar.",
                      (("servidor_central", "Dirección", False), ("central_clave", "Token", True)))
+        self._tarjeta_admin(self.caja_avz)
         self._padre_bloque = self
         self.auto = tk.BooleanVar(value=False)
         tk.Checkbutton(self.caja_avz, text="Asignarme una solicitud libre cuando no tenga ninguna", variable=self.auto,
@@ -1359,6 +1360,67 @@ class PanelAjustes(tk.Frame):
             if clave == "securecrt_exe":
                 e.config(width=48)
                 BOTON(inner, "Examinar…", lambda en=e: self._examinar_exe(en), False, 10).grid(row=3, column=1, sticky="w", padx=(8, 0))
+
+    # ---- rol administrador (PIN)
+    def _tarjeta_admin(self, padre):
+        card = tk.Frame(padre, bg=C["card"], highlightbackground=C["line"], highlightcolor=C["line"],
+                        highlightthickness=1)
+        card.pack(fill="x", pady=(0, 10))
+        inner = tk.Frame(card, bg=C["card"])
+        inner.pack(fill="x", padx=22, pady=14)
+        tk.Label(inner, text="Administrador", bg=C["card"], fg=C["txt"], font=(FONT, 12, "bold"),
+                 anchor="w").pack(fill="x")
+        tk.Label(inner, text="Con el rol de administrador aparece la pestaña Admin (agregar, activar y desactivar PEM "
+                 "y repartir las solicitudes). Se protege con un PIN.", bg=C["card"], fg=C["mut"], font=(FONT, 9),
+                 anchor="w", justify="left").pack(fill="x", pady=(0, 8))
+        fila = ad.Flujo(inner, C["card"])
+        fila.pack(fill="x")
+        self.lbl_admin = tk.Label(fila, text="", bg=C["card"], fg=C["txt"], font=(FONT, 10, "bold"))
+        self.lbl_admin.pack(side="left", padx=(0, 12))
+        self.b_admin = BOTON(fila, "", self._alternar_admin, False, 26)
+        self.b_admin.pack(side="left")
+        self._pintar_admin()
+
+    def _pintar_admin(self):
+        aj = self.sv.ajustes if self.sv else {}
+        si = bool(aj.get("rol_admin"))
+        self.lbl_admin.config(text="● Rol de administrador ACTIVO" if si else "○ Sin rol de administrador",
+                              fg=C["ok"] if si else C["mut"])
+        self.b_admin.config(text="Quitar rol de administrador" if si else
+                            ("Activar rol de administrador" if aj.get("admin_pin") else "Crear PIN y activar rol"))
+
+    def _alternar_admin(self):
+        from . import reparto_equipo
+        from .servicio import guardar_ajustes
+        aj = self.sv.ajustes
+        if not aj.get("admin_pin"):
+            p1 = simpledialog.askstring("PIN de administrador", "Cree un PIN de administrador (mínimo 4 dígitos):",
+                                        show="•", parent=self)
+            if not p1:
+                return
+            if len(p1) < 4:
+                messagebox.showwarning("PIN", "El PIN debe tener al menos 4 caracteres.", parent=self)
+                return
+            if simpledialog.askstring("PIN de administrador", "Repita el PIN:", show="•", parent=self) != p1:
+                messagebox.showwarning("PIN", "Los PIN no coinciden.", parent=self)
+                return
+            aj["admin_pin"] = reparto_equipo.hash_pin(p1)
+            aj["rol_admin"] = True
+        else:
+            p = simpledialog.askstring("PIN de administrador", "Escriba el PIN de administrador:", show="•",
+                                       parent=self)
+            if p is None:
+                return
+            if not reparto_equipo.pin_valido(p, aj["admin_pin"]):
+                messagebox.showerror("PIN", "PIN incorrecto.", parent=self)
+                return
+            aj["rol_admin"] = not aj.get("rol_admin")
+            if not aj["rol_admin"]:
+                aj["admin_repartir"] = False        # sin rol, deja de repartir
+        guardar_ajustes(aj)
+        self._pintar_admin()
+        if self.al_modo:
+            self.al_modo(bool(self.avz.get()))     # muestra u oculta la pestaña Admin
 
     def _examinar_carpeta_equipo(self, entrada):
         d = filedialog.askdirectory(title="Carpeta compartida del equipo (OneDrive/SharePoint)")

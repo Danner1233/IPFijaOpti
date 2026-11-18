@@ -123,6 +123,19 @@ Ya no se escribe "No exitosa" por defecto si no hay un estado confirmado.
 **Liberar (Sin Asignar):** botón en la Cola. Quita su nombre de PEM_ASIGNADO y deja Est_Seg en "Sin Asignar" (solo
 si sigue asignada a usted); el lector no la vuelve a tomar para usted en 3 horas. Catálogo: `hac_zac/causas.py`.
 
+## Reparto entre los PEM (rol admin)
+1. **Activar el rol:** Ajustes → Mostrar funciones avanzadas → **Administrador** → "Crear PIN y activar rol". Aparece la
+   pestaña **Admin** (solo en ese PC; para quitar el rol se pide el PIN).
+2. **Lista de PEM:** en Admin, agregar a cada uno con su nombre EXACTO de PEM_ASIGNADO y activarlo / desactivarlo.
+3. **Repartir automáticamente** (empieza en **Simulación**: solo muestra en la Cola a quién asignaría). Lo hace el
+   Lector de SharePoint de ese PC en cada vuelta: deje el flujo iniciado en la Cola.
+   - Recibe quien esté activo en la lista **y** ● Activo en la app (pestaña Equipo); una solicitud a la vez; primero el
+     que lleva más tiempo sin recibir; nunca se le devuelve a quien la liberó.
+   - Los PEM de la lista no se autoasignan mientras el admin reparte (se publica `reparto.json` en la carpeta del
+     equipo). Si el admin se detiene más de 10 min, vuelven a autoasignarse.
+4. **Cada PEM** sigue igual: con su flujo iniciado, su app ve la solicitud con su nombre y su lector de correo le trae
+   la plantilla. Requisito: carpeta del equipo configurada en todos.
+
 ## Pruebas
     python -m unittest discover -s tests -v
 Usan una carpeta temporal (`HAC_ZAC_DATOS`); no tocan datos reales.

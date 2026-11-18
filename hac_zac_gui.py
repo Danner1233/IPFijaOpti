@@ -381,11 +381,16 @@ class App(tk.Tk):
     def _pestanas(self):
         """Modo sencillo: Operación, Cola, Historial y Ajustes. Modo avanzado: agrega IP Capa 2 y Admin."""
         avz = self.centro or bool(self.sv.ajustes.get("modo_avanzado", False))
+        admin = bool(self.sv.ajustes.get("rol_admin"))
         sencillas = ("Operación", "Cola", "Historial", "Equipo", "Ajustes")
         for n, t in self.tabs.items():
             t.pack_forget()
             t.grid_forget()
             if self.centro and n == "Operación":
+                continue
+            if n == "Admin":                      # solo con el rol de administrador (PIN)
+                if admin:
+                    t.pack(side="left")
                 continue
             if avz or n in sencillas:
                 t.pack(side="left")

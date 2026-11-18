@@ -31,6 +31,9 @@ Automatiza el aprovisionamiento de **IP fija FTTx** (solicitudes HAC/ZAC):
 - Estados/causas: `hac_zac/causas.py` (tabla No exitosa/Escalamiento por red), `estados.a_sp` ("No Exitosa",
   "Sin Asignar"), `DialogoResultado` en panel.py, `sp_lector.cambios_estado`/`JS_ESTADO` (Est_Seg + causa + nota
   agregada a Observaciones), `JS_LIBERAR` + `cola.pedir_liberar` (Sin Asignar, no se retoma 3 h).
+- Reparto del admin: `hac_zac/reparto_equipo.py` (lógica pura + reparto.json + PIN), `sp_lector.repartir_equipo`
+  (en cada vuelta si ajustes rol_admin + admin_repartir; admin_simular por defecto True), `PanelAdmin` (pestaña solo con
+  rol_admin). Liberar deja nota "PEM X: liberó la solicitud" en Observaciones. `admin_agente.py` quedó obsoleto.
 - `sp_lector.py`: lee la lista de SharePoint con Selenium y escribe estados (REST/ETag).
 - `correo_lector.py`: busca en Outlook web la cuenta RR, abre los correos y confirma el SOLICITUD ID exacto antes de guardar la plantilla. Refresca cada 60 s.
 - `portal_csr.py`: consulta del Support Portal por serial o MAC.

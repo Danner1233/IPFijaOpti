@@ -551,12 +551,18 @@ class PanelEquipo(tk.Frame):
 
 # ======================================================================================= ADMIN
 class PanelAdmin(tk.Frame):
+    """ROL ADMIN: lista de PEM (agregar, activar/desactivar, quitar) y reparto automatico.
+    El reparto lo hace el Lector de SharePoint de ESTE PC en cada vuelta (Cola -> Iniciar flujo): misma regla que la
+    autoasignacion, solo a PEM activos aqui y Activos en la app (pestana Equipo)."""
+    COLS = ("PEM (nombre como en SharePoint)", "Lista del admin", "En la app", "Última asignación")
+
     def __init__(self, padre, servicio):
         super().__init__(padre, bg=P.C["bg"])
         self.sv = servicio
-        _titulo(self, "Administrador", "Active a los ingenieros que pueden recibir solicitudes. El agente reparte la "
-                "solicitud libre más antigua al ingeniero activo que no tenga ninguna abierta. El nombre debe ser exactamente "
-                "el de PEM_ASIGNADO.")
+        _titulo(self, "Administrador", "Agregue a cada PEM con su nombre EXACTO de la columna PEM_ASIGNADO y actívelo. "
+                "Se reparte la solicitud libre más antigua al PEM activo que esté usando la app y no tenga ninguna "
+                "abierta (primero el que lleva más tiempo sin recibir). Mientras usted reparte, los PEM de la lista no "
+                "se autoasignan. El reparto lo hace su Lector de SharePoint: deje el flujo iniciado en la Cola.")
         top = P.ad.Flujo(self, P.C["bg"])
         top.pack(fill="x")
         self.e_nuevo = P._entry(top, width=30)
@@ -564,39 +570,79 @@ class PanelAdmin(tk.Frame):
         self.e_nuevo.bind("<Return>", lambda e: self._agregar())
         P.BOTON(top, "Agregar", self._agregar, True, 10).pack(side="left", padx=6)
         P.BOTON(top, "Activar / Desactivar", self._alternar, False, 20).pack(side="left")
-        P.BOTON(top, "Quitar", self._quitar, False, 9).pack(side="right")
-        m, self.t = P._tabla(self, ("Ingeniero", "Estado", "Última asignación"), (320, 120, 200), alto=7)
+        P.BOTON(top, "Quitar", self._quitar, False, 9).pack(side="left", padx=6)
+        m, self.t = P._tabla(self, self.COLS, (300, 140, 150, 150), alto=9)
         m.pack(fill="x", pady=8)
-        self.t.tag_configure("on", foreground=P.C["ok"])
-        self.t.tag_configure("off", foreground=P.C["mut"])
+        for tag, color in (("on", P.C["ok"]), ("off", P.C["mut"]), ("lejos", P.C["warn"])):
+            self.t.tag_configure(tag, foreground=color)
         self.t.bind("<Double-1>", lambda e: self._alternar())
-        self.sim = tk.BooleanVar(value=False)
-        self.serv = _Servicios(self, (("admin", "Agente administrador", "admin_agente.py"),), servicio, self._args)
-        tk.Checkbutton(self.serv.opciones, text="Simulación (no escribe en SharePoint)", variable=self.sim,
-                       bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"], selectcolor=P.C["bg"],
-                       font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left", padx=(12, 0))
-        self.serv.pack(fill="both", expand=True)
+        card = tk.Frame(self, bg=P.C["card"], highlightbackground=P.C["line"], highlightcolor=P.C["line"],
+                        highlightthickness=1)
+        card.pack(fill="x", pady=(4, 0))
+        inner = P.ad.Flujo(card, P.C["card"], hueco=10)
+        inner.pack(fill="x", padx=18, pady=12)
+        self.repartir = tk.BooleanVar(value=bool(servicio.ajustes.get("admin_repartir")))
+        self.simular = tk.BooleanVar(value=bool(servicio.ajustes.get("admin_simular", True)))
+        tk.Checkbutton(inner, text="Repartir automáticamente", variable=self.repartir, command=self._guardar,
+                       bg=P.C["card"], fg=P.C["acc"], activebackground=P.C["card"], selectcolor=P.C["bg"],
+                       font=(P.FONT, 11, "bold"), bd=0, highlightthickness=0).pack(side="left")
+        tk.Checkbutton(inner, text="Simulación (solo muestra a quién asignaría)", variable=self.simular,
+                       command=self._guardar, bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"],
+                       selectcolor=P.C["bg"], font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left")
+        self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w", justify="left")
+        self.lbl.pack(fill="x", pady=(6, 0))
+        P.ad.envolver(self.lbl)
+        self._tarea = None
         self.refrescar()
 
-    def _args(self, clave):
-        if not [i for i in cola.ingenieros() if i.get("activo")]:
-            messagebox.showinfo("Administrador", "No hay ingenieros activos. Active al menos uno.")
-            return None
-        return ["--simular"] if self.sim.get() else []
+    def _guardar(self):
+        from hac_zac.servicio import guardar_ajustes
+        self.sv.ajustes["admin_repartir"] = bool(self.repartir.get())
+        self.sv.ajustes["admin_simular"] = bool(self.simular.get())
+        guardar_ajustes(self.sv.ajustes)
+        self.refrescar()
 
     def refrescar(self):
+        from . import presencia, reparto_equipo
+        if not self.winfo_exists():
+            return
+        if self._tarea:
+            try:
+                self.after_cancel(self._tarea)
+            except Exception:
+                pass
+        aj = self.sv.ajustes
+        carpeta = (aj.get("carpeta_equipo") or "").strip()
+        pres = reparto_equipo.presencia_por_nombre(carpeta) if carpeta else {}
         sel = self.t.selection()
         for i in self.t.get_children():
             self.t.delete(i)
-        for i in cola.ingenieros():
-            self.t.insert("", "end", iid=i["nombre"], tags=("on" if i.get("activo") else "off",),
-                          values=(i["nombre"], "● Activo" if i.get("activo") else "○ Inactivo",
-                                  (i.get("ultimo") or "—").replace("T", " ")[5:16]))
+        roster = cola.ingenieros()
+        for p in roster:
+            est = pres.get(cola._plano(p["nombre"]), "")
+            tag = "off" if not p.get("activo") else ("on" if est == "en_linea" else "lejos")
+            self.t.insert("", "end", iid=p["nombre"], tags=(tag,), values=(
+                p["nombre"], "● Activo" if p.get("activo") else "○ Inactivo",
+                presencia.ETIQUETA.get(est, "○ Sin dato") if carpeta else "— (sin carpeta)",
+                (p.get("ultimo") or "—").replace("T", " ")[5:16]))
         if sel and self.t.exists(sel[0]):
             self.t.selection_set(sel[0])
+        listos = [p["nombre"] for p in roster if p.get("activo") and pres.get(cola._plano(p["nombre"])) == "en_linea"]
+        if not carpeta:
+            msg, color = "Falta la carpeta del equipo en Ajustes: sin ella no se sabe quién está en línea y no se reparte.", P.C["err"]
+        elif not self.repartir.get():
+            msg, color = "Reparto apagado. Active «Repartir automáticamente».", P.C["mut"]
+        elif self.simular.get():
+            msg, color = ("SIMULACIÓN: su Lector de SharePoint mostrará en la Cola a quién asignaría, sin escribir. "
+                          "Pueden recibir ahora: %s." % (", ".join(listos) or "nadie")), P.C["warn"]
+        else:
+            msg, color = ("Repartiendo DE VERDAD con su Lector de SharePoint (flujo iniciado en la Cola). Pueden "
+                          "recibir ahora: %s." % (", ".join(listos) or "nadie")), P.C["ok"]
+        self.lbl.config(text=msg, fg=color)
+        self._tarea = self.after(30000, self.refrescar)
 
     def _agregar(self):
-        n = self.e_nuevo.get().strip()
+        n = " ".join(self.e_nuevo.get().split())
         if n:
             cola.agregar_ingeniero(n)
             self.e_nuevo.delete(0, "end")
@@ -616,4 +662,4 @@ class PanelAdmin(tk.Frame):
             self.refrescar()
 
     def detener_todo(self):
-        self.serv.detener_todo()
+        pass                                   # el reparto vive en el Lector de SharePoint (pestana Cola)
