@@ -143,7 +143,6 @@ class PanelCola(tk.Frame):
             _titulo(self, "Mis solicitudes", "Los lectores traen las solicitudes que se le asignan a su nombre y copian "
                     "su plantilla del correo. Cuando una tiene plantilla, pulse Procesar: se abre SecureCRT y el script "
                     "arranca solo.")
-        self.auto = tk.BooleanVar(value=bool(servicio.ajustes.get("auto_asignar", True)))
         self.b_flujo = P.BOTON(self, "▶  Iniciar flujo (correo)" if self.central else
                                "▶  Iniciar flujo (SharePoint + correo)", self._flujo, True, 34)
         if not self.central:                       # con central: SharePoint y correo los atiende el servidor
@@ -151,11 +150,6 @@ class PanelCola(tk.Frame):
         filas =((("correo", "Lector de correo", "correo_lector.py"),) if self.central else
                  (("sp", "Lector de SharePoint", "sp_lector.py"), ("correo", "Lector de correo", "correo_lector.py")))
         self.serv = _Servicios(self, filas, servicio, self._args)
-        if not self.central:                       # con reparto central, asignar lo hace el servidor
-            tk.Checkbutton(self.serv.opciones, text="Asignarme solo una solicitud libre", variable=self.auto,
-                           command=self._guardar_auto,
-                           bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"], selectcolor=P.C["bg"],
-                           font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left", padx=(12, 0))
         self.auto_proc = tk.BooleanVar(value=bool(servicio.ajustes.get("auto_procesar", False)))
         tk.Checkbutton(self.serv.opciones, text="Procesar solo cuando llegue la plantilla", variable=self.auto_proc,
                        command=self._guardar_auto, bg=P.C["card"], fg=P.C["acc"], activebackground=P.C["card"],
@@ -341,7 +335,7 @@ class PanelCola(tk.Frame):
         if not nombre:
             messagebox.showinfo("Mi nombre", "Escriba su nombre como aparece en PEM_ASIGNADO en la pestaña Ajustes.")
             return None
-        return ["--nombre", nombre] + (["--tomar"] if self.auto.get() else [])
+        return ["--nombre", nombre]                 # solo los administradores asignan
 
     @staticmethod
     def _hora(iso):
@@ -416,7 +410,6 @@ class PanelCola(tk.Frame):
     def _guardar_auto(self):
         from hac_zac.servicio import guardar_ajustes
         self.sv.ajustes["auto_procesar"] = bool(self.auto_proc.get())
-        self.sv.ajustes["auto_asignar"] = bool(self.auto.get())
         self.sv.ajustes["flujo_al_abrir"] = bool(self.al_abrir.get())
         for k, v in self.ver.items():
             self.sv.ajustes["ver_" + k] = bool(v.get())
@@ -499,19 +492,20 @@ class PanelCola(tk.Frame):
 
 # ======================================================================================= EQUIPO
 class PanelEquipo(tk.Frame):
-    """Quien esta en linea, ausente o desconectado (carpeta compartida del equipo en OneDrive)."""
-    COLS = ("PEM", "Estado", "Último uso", "Activo hoy")
+    """Quien esta en proceso, disponible, en pausa, ausente o desconectado (carpeta compartida en OneDrive)."""
+    COLS = ("PEM", "Estado", "Último uso", "En línea hoy")
 
     def __init__(self, padre, servicio):
         super().__init__(padre, bg=P.C["bg"])
         self.sv = servicio
-        _titulo(self, "Equipo", "Quién está usando el optimizador (estado automático, nadie lo puede cambiar a mano). Activo: usó la aplicación en los últimos 5 "
-                "minutos o tiene un proceso corriendo. Ausente: la tiene abierta pero lleva 5 minutos sin usarla. "
-                "En pausa: el PEM se puso en pausa (almuerzo, reunión...) y no recibe solicitudes. "
-                "Desconectado: cerró la aplicación o su PC no sincroniza.")
-        m, self.t = P._tabla(self, self.COLS, (260, 150, 160, 130), alto=10)
+        _titulo(self, "Equipo", "Quién está trabajando (estado automático, nadie lo cambia a mano). "
+                "En proceso: tiene una solicitud abierta (se ve cuál). Disponible: usa la app y no tiene ninguna. "
+                "En pausa: se puso en pausa (almuerzo, reunión...) y no recibe solicitudes. Ausente: la app abierta "
+                "pero 5 minutos sin usarla. Desconectado: cerró la aplicación o su PC no sincroniza.")
+        m, self.t = P._tabla(self, self.COLS, (240, 300, 140, 110), alto=10)
         m.pack(fill="both", expand=True, pady=8)
-        self.t.tag_configure("en_linea", foreground=P.C["ok"])
+        self.t.tag_configure("en_proceso", foreground=P.C["acc"])
+        self.t.tag_configure("disponible", foreground=P.C["ok"])
         self.t.tag_configure("ausente", foreground=P.C["warn"])
         self.t.tag_configure("pausa", foreground=P.C["warn"])
         self.t.tag_configure("desconectado", foreground=P.C["mut"])
@@ -539,18 +533,19 @@ class PanelEquipo(tk.Frame):
                                  "SharePoint que todos los PEM tengan sincronizada).", fg=P.C["warn"])
         else:
             filas = presencia.equipo(carpeta)
-            for f in filas:
-                self.t.insert("", "end", tags=(f["estado"],), values=(
-                    f["nombre"], presencia.texto_pausa(f["pausa"]) if f.get("pausa") else
-                    presencia.ETIQUETA.get(f["estado"], f["estado"]),
-                    presencia.hace(f["ultima_actividad"]),
+            orden = {"en_proceso": 0, "disponible": 1, "pausa": 2, "ausente": 3, "desconectado": 4}
+            vistas = sorted(((presencia.situacion(f["estado"], f.get("caso"), f.get("pausa")), f) for f in filas),
+                            key=lambda x: (orden.get(x[0][0], 9), x[1]["nombre"].lower()))
+            cuenta = {}
+            for (clave, texto), f in vistas:
+                cuenta[clave] = cuenta.get(clave, 0) + 1
+                self.t.insert("", "end", tags=(clave,), values=(
+                    f["nombre"], texto, presencia.hace(f["ultima_actividad"]),
                     ("%d h %02d min" % divmod(f["en_linea_hoy_min"], 60)) if f["en_linea_hoy_min"] else "—"))
-            n = sum(1 for f in filas if f["estado"] == "en_linea")
-            self.lbl.config(text="%d activo(s) · %d en pausa · %d ausente(s) · %d desconectado(s) · se actualiza "
-                                 "cada 30 s" % (
-                n, sum(1 for f in filas if f["estado"] == "pausa"), sum(1 for f in filas if f["estado"] == "ausente"),
-                sum(1 for f in filas if f["estado"] == "desconectado")) if filas else
-                "Nadie ha publicado su estado todavía en esa carpeta.", fg=P.C["mut"])
+            self.lbl.config(text="%d en proceso · %d disponible(s) · %d en pausa · %d ausente(s) · %d desconectado(s)"
+                                 " · se actualiza cada 30 s" % tuple(cuenta.get(k, 0) for k in (
+                                     "en_proceso", "disponible", "pausa", "ausente", "desconectado"))
+                            if filas else "Nadie ha publicado su estado todavía en esa carpeta.", fg=P.C["mut"])
         self._tarea = self.after(30000, self.refrescar)
 
 
@@ -566,8 +561,8 @@ class PanelAdmin(tk.Frame):
         self.sv = servicio
         _titulo(self, "Administrador", "Agregue a cada PEM con su nombre EXACTO de la columna PEM_ASIGNADO y actívelo. "
                 "Se reparte la solicitud libre más antigua al PEM activo que esté usando la app y no tenga ninguna "
-                "abierta (primero el que lleva más tiempo sin recibir). Mientras usted reparte, los PEM de la lista no "
-                "se autoasignan. El reparto lo hace su Lector de SharePoint: deje el flujo iniciado en la Cola.")
+                "abierta (primero el que lleva más tiempo sin recibir). Los PEM ya no se autoasignan: solo reparten los "
+                "administradores. El reparto lo hace su Lector de SharePoint: deje el flujo iniciado en la Cola.")
         top = P.ad.Flujo(self, P.C["bg"])
         top.pack(fill="x")
         self.e_nuevo = P._entry(top, width=30)
@@ -630,10 +625,10 @@ class PanelAdmin(tk.Frame):
             fila = filas_eq.get(cola._plano(p["nombre"])) or {}
             if not carpeta:
                 en_app = "— (sin carpeta)"
-            elif est == "pausa" and fila.get("pausa"):
-                en_app = presencia.texto_pausa(fila["pausa"])        # se puso inactivo el mismo PEM
+            elif fila:
+                en_app = presencia.situacion(est, fila.get("caso"), fila.get("pausa"))[1]
             else:
-                en_app = presencia.ETIQUETA.get(est, "○ Sin dato")
+                en_app = "○ Sin dato"
             self.t.insert("", "end", iid=p["nombre"], tags=(tag,), values=(
                 p["nombre"], "● Activo" if p.get("activo") else "○ Inactivo", en_app,
                 p["ultimo"].replace("T", " ")[5:16] if p.get("ultimo") else "—"))
@@ -651,10 +646,10 @@ class PanelAdmin(tk.Frame):
             cod, minutos, faltan = reparto_equipo.estado_publicacion(carpeta, roster)
             if cod == "sin_archivo":
                 msg, color = ("REPARTO DETENIDO: su Lector de SharePoint todavía no ha repartido. Vaya a la Cola y "
-                              "pulse ▶ Iniciar flujo; mientras tanto los PEM se autoasignan."), P.C["err"]
+                              "pulse ▶ Iniciar flujo; mientras tanto nadie recibe solicitudes."), P.C["err"]
             elif cod == "detenido":
-                msg, color = ("REPARTO DETENIDO: su Lector de SharePoint no reparte hace %d min, así que los PEM se "
-                              "están autoasignando. Vaya a la Cola y pulse ▶ Iniciar flujo." % minutos), P.C["err"]
+                msg, color = ("REPARTO DETENIDO: su Lector de SharePoint no reparte hace %d min, así que nadie está "
+                              "recibiendo solicitudes. Vaya a la Cola y pulse ▶ Iniciar flujo." % minutos), P.C["err"]
             else:
                 msg, color = ("Repartiendo DE VERDAD (última vuelta hace %d min). Pueden recibir ahora: %s."
                               % (minutos, ", ".join(listos) or "nadie")), P.C["ok"]

@@ -120,7 +120,7 @@ def texto_pausa(pausa):
     return ETIQUETA["pausa"] + (": " + pausa["razon"] if pausa.get("razon") else "") + hasta
 
 
-def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, pausa=None):
+def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, pausa=None, caso=""):
     """Escribe mi estado y suma mis minutos en linea de hoy. Devuelve el registro escrito.
     Si hay dos ventanas abiertas en este PC (script y centro de control), se toma la actividad mas reciente y el
     tiempo no se cuenta doble (se suma desde el ultimo 'tick' guardado, no por ventana)."""
@@ -142,6 +142,8 @@ def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, paus
     reg = {"nombre": " ".join(str(nombre).split()), "estado": estado, "pc": pc, "fecha": hoy,
            "ultima_actividad": _iso(ultima_actividad) if ultima_actividad else "",
            "tick": _iso(ahora), "actualizado": _iso(ahora), "en_linea_hoy_s": int(segundos)}
+    if caso:
+        reg["caso"] = str(caso)                 # solicitud en proceso (para que el equipo vea quien trabaja)
     pausa = pausa_vigente(pausa, ahora)
     if pausa:
         reg["pausa"] = {"hasta": pausa.get("hasta", ""), "razon": pausa.get("razon", "")}
@@ -178,7 +180,7 @@ def equipo(carpeta_equipo, ahora=None):
         out.append({"nombre": r["nombre"], "estado": estado, "ultima_actividad": r.get("ultima_actividad") or "",
                     "actualizado": r.get("actualizado") or "",
                     "en_linea_hoy_min": int((r.get("en_linea_hoy_s") or 0) / 60) if hoy else 0,
-                    "pausa": pausa})
+                    "pausa": pausa, "caso": r.get("caso") or ""})
     orden = {"en_linea": 0, "pausa": 1, "ausente": 2, "desconectado": 3}
     return sorted(out, key=lambda x: (orden.get(x["estado"], 3), x["nombre"].lower()))
 
@@ -199,3 +201,17 @@ def hace(iso, ahora=None):
 
 
 ETIQUETA = {"en_linea": "● Activo", "ausente": "◐ Ausente", "desconectado": "○ Desconectado", "pausa": "⏸ En pausa"}
+
+
+def situacion(estado, caso="", pausa=None):
+    """Lo que se muestra del PEM en Equipo/Admin: (clave, texto).
+    en_proceso / disponible (activo con o sin solicitud), pausa, ausente, desconectado."""
+    if estado == "desconectado":
+        return "desconectado", ETIQUETA["desconectado"]
+    if estado == "pausa" or pausa:
+        return "pausa", texto_pausa(pausa or {})
+    if estado == "ausente":
+        return "ausente", ETIQUETA["ausente"] + (" · con la %s" % caso if caso else "")
+    if caso:
+        return "en_proceso", "● En proceso · %s" % caso
+    return "disponible", "● Disponible"

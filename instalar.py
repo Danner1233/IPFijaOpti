@@ -131,7 +131,7 @@ def configurar(destino, carpeta_equipo, exe, sesion):
     for k, v in (("securecrt_exe", exe), ("sesion_crt", sesion), ("carpeta_equipo", carpeta_equipo)):
         if v and not str(aj.get(k) or "").strip():
             aj[k] = v
-    aj.setdefault("auto_asignar", True)
+    aj["auto_asignar"] = False                 # solo los administradores asignan
     with open(ruta, "w", encoding="utf-8") as f:
         json.dump(aj, f, ensure_ascii=False, indent=2)
     return aj
