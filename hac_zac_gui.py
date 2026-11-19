@@ -178,6 +178,8 @@ class App(tk.Tk):
         self.v_admin = panel_centro.PanelAdmin(self.cont, self.sv)
         self.v_reportes = panel_centro.PanelReportes(self.cont, self.sv)
         self.v_equipo = panel_centro.PanelEquipo(self.cont, self.sv)
+        from hac_zac import panel_emergencia
+        self.v_conting = panel_emergencia.PanelContingencia(self.cont, self.sv, self._nodo_actual)
         self.vista_op = self.v_form
         self._mostrar(self.v_cola if centro else self.v_form)
         if centro or not demo:
@@ -368,15 +370,6 @@ class App(tk.Tk):
                          padx=10, pady=3, cursor="hand2")
         b_ips.pack(side="right", padx=(8, 0))
         b_ips.bind("<Button-1>", lambda e: self._ips_libres())
-        # Contingencia: buscador de IPs por nodo (Excel) y guia del proceso manual
-        b_nodo = tk.Label(h, text="IPs por nodo", bg=C["card2"], fg=C["acc"], font=(FONT, 10, "bold"),
-                          padx=10, pady=3, cursor="hand2")
-        b_nodo.pack(side="right", padx=(8, 0))
-        b_nodo.bind("<Button-1>", lambda e: self._buscador_ips())
-        b_emg = tk.Label(h, text="⚠ Emergencia", bg=C["card2"], fg=C["err"], font=(FONT, 10, "bold"),
-                         padx=10, pady=3, cursor="hand2")
-        b_emg.pack(side="right", padx=(8, 0))
-        b_emg.bind("<Button-1>", lambda e: self._emergencia())
         self.b_nueva = tk.Label(h, text="＋ Nueva solicitud", bg=C["acc"], fg=C["on_acc"], font=(FONT, 10, "bold"),
                                 padx=10, pady=3, cursor="hand2")
         if not self.centro:
@@ -401,7 +394,7 @@ class App(tk.Tk):
         h2.pack(fill="x", padx=26, pady=(0, 8))
         self.tabs = {}
         self._h2 = h2
-        for nombre in ("Operación", "Cola", "Historial", "Equipo", "IP Capa 2", "Admin", "Reportes", "Ajustes"):
+        for nombre in ("Operación", "Cola", "Historial", "Equipo", "Contingencia", "IP Capa 2", "Admin", "Reportes", "Ajustes"):
             t = tk.Label(h2, text=nombre, bg=C["bg"], fg=C["mut"], font=(FONT, 11, "bold"),
                          padx=10, pady=2, cursor="hand2")
             t.bind("<Button-1>", lambda e, n=nombre: self._tab(n))
@@ -467,7 +460,7 @@ class App(tk.Tk):
         """Modo sencillo: Operación, Cola, Historial y Ajustes. Modo avanzado: agrega IP Capa 2 y Admin."""
         avz = self.centro or bool(self.sv.ajustes.get("modo_avanzado", False))
         admin = bool(self.sv.ajustes.get("rol_admin"))
-        sencillas = ("Operación", "Cola", "Historial", "Equipo", "Ajustes")
+        sencillas = ("Operación", "Cola", "Historial", "Equipo", "Contingencia", "Ajustes")
         for n, t in self.tabs.items():
             t.pack_forget()
             t.grid_forget()
@@ -520,7 +513,7 @@ class App(tk.Tk):
 
     def _mostrar(self, vista):
         for v in (self.v_form, self.v_run, self.v_res, self.v_hist, self.v_ips, self.v_aj, self.v_cola, self.v_admin,
-                  self.v_equipo, self.v_reportes):
+                  self.v_equipo, self.v_reportes, self.v_conting):
             v.pack_forget()
         vista.pack(fill="both", expand=True)
         self.after_idle(self._relayout)
@@ -529,7 +522,8 @@ class App(tk.Tk):
             activa = "Operación"
         else:
             activa = {id(self.v_hist): "Historial", id(self.v_aj): "Ajustes", id(self.v_cola): "Cola",
-                      id(self.v_admin): "Admin", id(self.v_equipo): "Equipo", id(self.v_reportes): "Reportes"}.get(id(vista), "IP Capa 2")
+                      id(self.v_admin): "Admin", id(self.v_equipo): "Equipo", id(self.v_reportes): "Reportes",
+                      id(self.v_conting): "Contingencia"}.get(id(vista), "IP Capa 2")
         for n, t in self.tabs.items():
             t.config(fg=C["acc"] if n == activa else C["mut"])
 
@@ -554,6 +548,9 @@ class App(tk.Tk):
         elif nombre == "Reportes":
             self.v_reportes.refrescar()
             self._mostrar(self.v_reportes)
+        elif nombre == "Contingencia":
+            self.v_conting.refrescar()
+            self._mostrar(self.v_conting)
         else:
             self.v_ips.refrescar()
             self._mostrar(self.v_ips)
@@ -568,14 +565,6 @@ class App(tk.Tk):
                 if m:
                     return m.group(1)
         return ""
-
-    def _buscador_ips(self):
-        from hac_zac import panel_emergencia
-        panel_emergencia.VentanaIPs(self, self.sv, self._nodo_actual())
-
-    def _emergencia(self):
-        from hac_zac import panel_emergencia
-        panel_emergencia.VentanaEmergencia(self, self.sv)
 
     def _ips_libres(self):
         """Reabre el recuadro de segmentos/IP libres (de la solicitud abierta o la mas reciente)."""

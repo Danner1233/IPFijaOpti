@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Ventanas de contingencia: Buscador de IPs por nodo (Excel) y Guia de emergencia (proceso manual paso a paso)."""
-import os
+"""Pestana Contingencia: Guia de emergencia (proceso manual paso a paso) y Buscador de IPs por nodo (Excel)."""
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -10,124 +9,6 @@ from . import panel as P
 
 FONT, ad = P.FONT, P.ad
 MONO = ("Consolas", 10)
-
-
-def _toplevel(padre, titulo, ancho, alto):
-    v = tk.Toplevel(padre)
-    v.title(titulo)
-    v.configure(bg=P.C["bg"])
-    w, h, x, y = ad.tamano_ventana(v, ancho, alto)
-    v.geometry("%dx%d+%d+%d" % (w, h, x, y))
-    v.minsize(min(ad.px(520), w), min(ad.px(380), h))
-    return v
-
-
-# ======================================================================================= BUSCADOR DE IPS
-class VentanaIPs:
-    """Buscar por NODO: puertas de enlace usadas en solicitudes Exitosas y las IPs que ya se asignaron."""
-    COLS = ("Nodo", "Puerta de enlace", "Usos", "Última vez", "Red", "OLT", "VLAN")
-
-    def __init__(self, padre, servicio, nodo=""):
-        self.sv = servicio
-        self.v = _toplevel(padre, "Buscador de IPs por nodo", 1000, 680)
-        caja = tk.Frame(self.v, bg=P.C["bg"])
-        caja.pack(fill="both", expand=True, padx=ad.px(20), pady=ad.px(14))
-        tk.Label(caja, text="Buscador de IPs por nodo", bg=P.C["bg"], fg=P.C["txt"], font=(P.SERIF, 16, "bold"),
-                 anchor="w").pack(fill="x")
-        ayuda = tk.Label(caja, text="Para cuando el Hendrix no responde. Escriba el NODO de la solicitud: salen las "
-                         "puertas de enlace usadas en ese nodo (solicitudes Exitosas) y, al elegir una, las IPs que ya "
-                         "se asignaron ahí (no las repita). Confirme siempre la IP antes de entregarla.",
-                         bg=P.C["bg"], fg=P.C["mut"], font=(FONT, 9), anchor="w", justify="left")
-        ayuda.pack(fill="x", pady=(2, 8))
-        ad.envolver(ayuda)
-        fila = ad.Flujo(caja, P.C["bg"], hueco=6)
-        fila.pack(fill="x")
-        self.e = P._entry(fila, width=24)
-        self.e.pack(side="left", ipady=5)
-        self.e.insert(0, nodo)
-        self.e.bind("<Return>", lambda e: self.buscar())
-        P.BOTON(fila, "Buscar", self.buscar, True, 10).pack(side="left")
-        P.BOTON(fila, "Actualizar Excel…", self.actualizar, False, 18).pack(side="left", padx=(12, 0))
-        m, self.t = P._tabla(caja, self.COLS, (110, 150, 60, 100, 110, 200, 70), alto=10)
-        m.pack(fill="both", expand=True, pady=8)
-        self.t.bind("<<TreeviewSelect>>", lambda e: self._mostrar_ips())
-        tk.Label(caja, text="IPs ya asignadas en esa puerta de enlace (selecciónelas y copie con Ctrl+C):",
-                 bg=P.C["bg"], fg=P.C["mut"], font=(FONT, 9, "bold"), anchor="w").pack(fill="x")
-        self.ips = tk.Text(caja, height=5, bg=P.C["card2"], fg=P.C["txt"], insertbackground=P.C["txt"], relief="flat",
-                           font=MONO, wrap="word")
-        self.ips.pack(fill="x", pady=(4, 6))
-        self.lbl = tk.Label(caja, text="", bg=P.C["bg"], fg=P.C["mut"], font=(FONT, 9), anchor="w", justify="left")
-        self.lbl.pack(fill="x")
-        ad.envolver(self.lbl)
-        self._filas = {}
-        self.indice = B.cargar(self._carpeta())
-        self._pie()
-        if nodo:
-            self.buscar()
-        self.e.focus_set()
-
-    def _carpeta(self):
-        return (self.sv.ajustes.get("carpeta_equipo") or "").strip() if self.sv else ""
-
-    def _pie(self, extra=""):
-        i = self.indice
-        if not i:
-            txt = "Todavía no hay datos: pulse «Actualizar Excel…» y elija el Excel «Buscador IPs por Nodo»."
-            self.lbl.config(text=txt, fg=P.C["warn"])
-            return
-        cuando = (i.get("importado") or "").replace("T", " ")[:16]
-        self.lbl.config(text=("%sDatos del Excel «%s» cargado el %s · %d nodos · %d solicitudes exitosas. "
-                              "Compartido con el equipo por la carpeta del equipo." % (
-                                  extra, i.get("origen", ""), cuando, len(i.get("nodos") or {}),
-                                  i.get("exitosas", 0))), fg=P.C["mut"])
-
-    def buscar(self):
-        for x in self.t.get_children():
-            self.t.delete(x)
-        self.ips.delete("1.0", "end")
-        self._filas = {}
-        res = B.buscar(self.indice, self.e.get())
-        for k, r in enumerate(res):
-            iid = str(k)
-            self._filas[iid] = r
-            self.t.insert("", "end", iid=iid, values=(r["nodo"], r["gw"], r["n"], r["ultima"] or "—", r["red"] or "—",
-                                                      r["olt"] or "—", r["vlan"] or "—"))
-        if res:
-            self.t.selection_set("0")
-            self._pie("%d puerta(s) de enlace. " % len(res))
-        elif self.indice:
-            self._pie("Sin resultados para «%s». " % self.e.get().strip())
-
-    def _mostrar_ips(self):
-        sel = self.t.selection()
-        self.ips.delete("1.0", "end")
-        if sel and sel[0] in self._filas:
-            r = self._filas[sel[0]]
-            self.ips.insert("1.0", ", ".join(r["ips"]) if r["ips"] else "(sin IPs registradas)")
-
-    def actualizar(self):
-        ruta = filedialog.askopenfilename(parent=self.v, title="Excel «Buscador IPs por Nodo» actualizado",
-                                          filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")])
-        if not ruta:
-            return
-        self.lbl.config(text="Leyendo el Excel… (puede tardar un minuto)", fg=P.C["acc"])
-        carpeta = self._carpeta()
-
-        def trabajo():
-            try:
-                ind = B.importar(ruta, carpeta, progreso=lambda n: self.v.after(
-                    0, lambda: self.lbl.config(text="Leyendo el Excel… %d filas" % n)))
-                self.v.after(0, lambda: self._listo(ind))
-            except Exception as e:
-                self.v.after(0, lambda: (self.lbl.config(text="No se pudo actualizar: %s" % e, fg=P.C["err"]),
-                                         messagebox.showerror("Actualizar Excel", str(e), parent=self.v)))
-        threading.Thread(target=trabajo, daemon=True).start()
-
-    def _listo(self, ind):
-        self.indice = ind
-        self._pie("✔ Actualizado. ")
-        if self.e.get().strip():
-            self.buscar()
 
 
 # ======================================================================================= GUIA DE EMERGENCIA
@@ -157,7 +38,7 @@ GUIA = [
     ("4. Entrar al jump host (Hendrix)", [
         "SecureCRT → sesión del jump host (HENDRIX_DEMIMASTER, 172.31.238.6) con su usuario de red.",
         "Si el Hendrix no responde: no se puede consultar ni configurar equipos. Use el «Buscador de IPs por nodo» "
-        "(botón abajo) para ubicar la puerta de enlace y las IPs ya usadas en el nodo, y escale según el procedimiento.",
+        "(pestaña Contingencia → Buscador de IPs por nodo) para ubicar la puerta de enlace y las IPs ya usadas en el nodo, y escale según el procedimiento.",
     ]),
     ("5. Capa 3 por BGP (A9KTRIARA2)", [
         "$ ssh A9KTRIARA2",
@@ -251,24 +132,137 @@ GUIA = [
 ]
 
 
-class VentanaEmergencia:
+# ======================================================================================= BUSCADOR DE IPS
+class BuscadorIPs(tk.Frame):
+    """Buscar por NODO: puertas de enlace usadas en solicitudes Exitosas y las IPs que ya se asignaron."""
+    COLS = ("Nodo", "Puerta de enlace", "Usos", "Última vez", "Red", "OLT", "VLAN")
+
     def __init__(self, padre, servicio):
-        self.sv, self.padre = servicio, padre
-        self.v = _toplevel(padre, "Guía de emergencia", 900, 760)
-        caja = tk.Frame(self.v, bg=P.C["bg"])
-        caja.pack(fill="both", expand=True, padx=ad.px(20), pady=ad.px(14))
-        tk.Label(caja, text="⚠ Guía de emergencia: proceso manual", bg=P.C["bg"], fg=P.C["err"],
-                 font=(P.SERIF, 16, "bold"), anchor="w").pack(fill="x")
-        b = ad.Flujo(caja, P.C["bg"], hueco=6)
-        b.pack(fill="x", pady=(6, 8))
-        P.BOTON(b, "Buscador de IPs por nodo", lambda: VentanaIPs(self.v, self.sv), True, 24).pack(side="left")
-        P.BOTON(b, "Guardar como texto…", self._guardar, False, 20).pack(side="left")
-        marco = tk.Frame(caja, bg=P.C["card2"])
+        super().__init__(padre, bg=P.C["bg"])
+        self.sv = servicio
+        ayuda = tk.Label(self, text="Para cuando el Hendrix no responde. Escriba el NODO de la solicitud: salen las "
+                         "puertas de enlace usadas en ese nodo (solicitudes Exitosas) y, al elegir una, las IPs que ya "
+                         "se asignaron ahí (no las repita). Confirme siempre la IP antes de entregarla.",
+                         bg=P.C["bg"], fg=P.C["mut"], font=(FONT, 9), anchor="w", justify="left")
+        ayuda.pack(fill="x", pady=(0, 8))
+        ad.envolver(ayuda)
+        fila = ad.Flujo(self, P.C["bg"], hueco=6)
+        fila.pack(fill="x")
+        self.e = P._entry(fila, width=24)
+        self.e.pack(side="left", ipady=5)
+        self.e.bind("<Return>", lambda e: self.buscar())
+        P.BOTON(fila, "Buscar", self.buscar, True, 10).pack(side="left")
+        P.BOTON(fila, "Actualizar Excel…", self.actualizar, False, 18).pack(side="left", padx=(12, 0))
+        m, self.t = P._tabla(self, self.COLS, (110, 150, 60, 100, 110, 200, 70), alto=10)
+        m.pack(fill="x", pady=8)
+        self.t.bind("<<TreeviewSelect>>", lambda e: self._mostrar_ips())
+        tk.Label(self, text="IPs ya asignadas en esa puerta de enlace (selecciónelas y copie con Ctrl+C):",
+                 bg=P.C["bg"], fg=P.C["mut"], font=(FONT, 9, "bold"), anchor="w").pack(fill="x")
+        self.ips = tk.Text(self, height=5, bg=P.C["card2"], fg=P.C["txt"], insertbackground=P.C["txt"],
+                           relief="flat", font=MONO, wrap="word")
+        self.ips.pack(fill="x", pady=(4, 6))
+        self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(FONT, 9), anchor="w", justify="left")
+        self.lbl.pack(fill="x")
+        ad.envolver(self.lbl)
+        self._filas = {}
+        self.indice = {}
+        self.refrescar()
+
+    def _carpeta(self):
+        return (self.sv.ajustes.get("carpeta_equipo") or "").strip() if self.sv else ""
+
+    def refrescar(self, nodo=""):
+        """Recarga los datos (otro PEM pudo actualizar el Excel) y, si se da, busca ese nodo."""
+        self.indice = B.cargar(self._carpeta())
+        if nodo and not self.e.get().strip():
+            self.e.insert(0, nodo)
+        if self.e.get().strip():
+            self.buscar()
+        else:
+            self._pie()
+
+    def _pie(self, extra=""):
+        i = self.indice
+        if not i:
+            self.lbl.config(text="Todavía no hay datos: pulse «Actualizar Excel…» y elija el Excel «Buscador IPs "
+                                 "por Nodo».", fg=P.C["warn"])
+            return
+        cuando = (i.get("importado") or "").replace("T", " ")[:16]
+        self.lbl.config(text=("%sDatos del Excel «%s» cargado el %s · %d nodos · %d solicitudes exitosas. "
+                              "Compartido con el equipo por la carpeta del equipo." % (
+                                  extra, i.get("origen", ""), cuando, len(i.get("nodos") or {}),
+                                  i.get("exitosas", 0))), fg=P.C["mut"])
+
+    def buscar(self):
+        for x in self.t.get_children():
+            self.t.delete(x)
+        self.ips.delete("1.0", "end")
+        self._filas = {}
+        res = B.buscar(self.indice, self.e.get())
+        for k, r in enumerate(res):
+            iid = str(k)
+            self._filas[iid] = r
+            self.t.insert("", "end", iid=iid, values=(r["nodo"], r["gw"], r["n"], r["ultima"] or "—", r["red"] or "—",
+                                                      r["olt"] or "—", r["vlan"] or "—"))
+        if res:
+            self.t.selection_set("0")
+            self._pie("%d puerta(s) de enlace. " % len(res))
+        elif self.indice and self.e.get().strip():
+            self._pie("Sin resultados para «%s». " % self.e.get().strip())
+        else:
+            self._pie()
+
+    def _mostrar_ips(self):
+        sel = self.t.selection()
+        self.ips.delete("1.0", "end")
+        if sel and sel[0] in self._filas:
+            r = self._filas[sel[0]]
+            self.ips.insert("1.0", ", ".join(r["ips"]) if r["ips"] else "(sin IPs registradas)")
+
+    def actualizar(self):
+        ruta = filedialog.askopenfilename(parent=self.winfo_toplevel(),
+                                          title="Excel «Buscador IPs por Nodo» actualizado",
+                                          filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")])
+        if not ruta:
+            return
+        self.lbl.config(text="Leyendo el Excel… (puede tardar un minuto)", fg=P.C["acc"])
+        carpeta = self._carpeta()
+
+        def trabajo():
+            try:
+                ind = B.importar(ruta, carpeta, progreso=lambda n: self.after(
+                    0, lambda: self.lbl.config(text="Leyendo el Excel… %d filas" % n)))
+                self.after(0, lambda: self._listo(ind))
+            except Exception as e:
+                self.after(0, lambda: (self.lbl.config(text="No se pudo actualizar: %s" % e, fg=P.C["err"]),
+                                       messagebox.showerror("Actualizar Excel", str(e),
+                                                            parent=self.winfo_toplevel())))
+        threading.Thread(target=trabajo, daemon=True).start()
+
+    def _listo(self, ind):
+        self.indice = ind
+        self._pie("✔ Actualizado. ")
+        if self.e.get().strip():
+            self.buscar()
+
+
+# ======================================================================================= GUIA DE EMERGENCIA
+class GuiaEmergencia(tk.Frame):
+    """El proceso manual paso a paso (solo lectura; se puede seleccionar y copiar)."""
+
+    def __init__(self, padre):
+        super().__init__(padre, bg=P.C["bg"])
+        b = ad.Flujo(self, P.C["bg"], hueco=6)
+        b.pack(fill="x", pady=(0, 8))
+        tk.Label(b, text="Si el automatismo no funciona, siga estos pasos a mano. Los comandos van en verde.",
+                 bg=P.C["bg"], fg=P.C["mut"], font=(FONT, 9)).pack(side="left")
+        P.BOTON(b, "Guardar como texto…", self._guardar, False, 20).pack(side="left", padx=(12, 0))
+        marco = tk.Frame(self, bg=P.C["card2"])
         marco.pack(fill="both", expand=True)
         sb = tk.Scrollbar(marco)
         sb.pack(side="right", fill="y")
-        t = tk.Text(marco, bg=P.C["card2"], fg=P.C["txt"], insertbackground=P.C["txt"], relief="flat", wrap="word",
-                    font=(FONT, 10), padx=14, pady=10, yscrollcommand=sb.set)
+        t = tk.Text(marco, height=32, bg=P.C["card2"], fg=P.C["txt"], insertbackground=P.C["txt"], relief="flat",
+                    wrap="word", font=(FONT, 10), padx=14, pady=10, yscrollcommand=sb.set)
         t.pack(side="left", fill="both", expand=True)
         sb.config(command=t.yview)
         t.tag_configure("titulo", font=(FONT, 12, "bold"), foreground=P.C["acc"], spacing1=10, spacing3=4)
@@ -281,17 +275,18 @@ class VentanaEmergencia:
                     t.insert("end", ln[2:] + "\n", "cmd")
                 else:
                     t.insert("end", ln + "\n", "txt")
-        t.config(state="disabled")            # solo lectura (se puede seleccionar y copiar)
+        t.config(state="disabled")
+        self.texto = t
 
     def _guardar(self):
-        ruta = filedialog.asksaveasfilename(parent=self.v, title="Guardar la guía", defaultextension=".txt",
-                                            initialfile="Guia_emergencia_IP_fija.txt",
+        ruta = filedialog.asksaveasfilename(parent=self.winfo_toplevel(), title="Guardar la guía",
+                                            defaultextension=".txt", initialfile="Guia_emergencia_IP_fija.txt",
                                             filetypes=[("Texto", "*.txt")])
         if not ruta:
             return
         with open(ruta, "w", encoding="utf-8") as f:
             f.write(texto_guia())
-        messagebox.showinfo("Guía", "Guardada en:\n%s" % ruta, parent=self.v)
+        messagebox.showinfo("Guía", "Guardada en:\n%s" % ruta, parent=self.winfo_toplevel())
 
 
 def texto_guia():
@@ -299,3 +294,51 @@ def texto_guia():
     for titulo, lineas in GUIA:
         out += [titulo.upper()] + [("    " + ln[2:]) if ln.startswith("$ ") else ln for ln in lineas] + [""]
     return "\n".join(out)
+
+
+# ======================================================================================= PESTANA CONTINGENCIA
+class PanelContingencia(tk.Frame):
+    """Pestana 'Contingencia': Guia de emergencia y Buscador de IPs por nodo, en su propia seccion."""
+
+    def __init__(self, padre, servicio, nodo_actual=lambda: ""):
+        super().__init__(padre, bg=P.C["bg"])
+        self.nodo_actual = nodo_actual
+        tk.Label(self, text="Contingencia", bg=P.C["bg"], fg=P.C["txt"], font=(P.SERIF, 17, "bold")).pack(anchor="w")
+        a = tk.Label(self, text="Para cuando el automatismo o el Hendrix no funcionan: el proceso manual paso a paso y "
+                     "el buscador de IPs por nodo (del Excel del equipo).", bg=P.C["bg"], fg=P.C["mut"],
+                     font=(FONT, 10), justify="left")
+        a.pack(anchor="w", pady=(0, 8))
+        ad.envolver(a)
+        sel = ad.Flujo(self, P.C["bg"], hueco=6)
+        sel.pack(fill="x", pady=(0, 10))
+        self.b_guia = tk.Label(sel, text="⚠  Guía de emergencia", font=(FONT, 10, "bold"), padx=14, pady=6,
+                               cursor="hand2")
+        self.b_ips = tk.Label(sel, text="Buscador de IPs por nodo", font=(FONT, 10, "bold"), padx=14, pady=6,
+                              cursor="hand2")
+        self.b_guia.pack(side="left")
+        self.b_ips.pack(side="left")
+        self.b_guia.bind("<Button-1>", lambda e: self.ver("guia"))
+        self.b_ips.bind("<Button-1>", lambda e: self.ver("ips"))
+        self.guia = GuiaEmergencia(self)
+        self.buscador = BuscadorIPs(self, servicio)
+        self.vista = "guia"
+        self.ver("guia")
+
+    def ver(self, cual):
+        self.vista = cual
+        for f in (self.guia, self.buscador):
+            f.pack_forget()
+        (self.guia if cual == "guia" else self.buscador).pack(fill="both", expand=True)
+        for b, k in ((self.b_guia, "guia"), (self.b_ips, "ips")):
+            activo = k == cual
+            b.config(bg=P.C["acc"] if activo else P.C["card2"], fg=P.C["on_acc"] if activo else P.C["acc"])
+        if cual == "ips":
+            self.buscador.refrescar(self.nodo_actual())
+            self.buscador.e.focus_set()
+
+    def refrescar(self):
+        if self.vista == "ips":
+            self.buscador.refrescar(self.nodo_actual())
+
+    def detener_todo(self):
+        pass
