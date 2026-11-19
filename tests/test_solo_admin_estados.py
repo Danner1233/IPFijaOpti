@@ -20,8 +20,9 @@ class PruebasSoloAdmin(unittest.TestCase):
         with open(os.path.join(AQUI, "sp_lector.py"), encoding="utf-8") as f:
             s = f.read()
         bucle = s[s.index("def main("):]
-        self.assertNotIn("tomar_libre(", bucle, "el lector del PEM ya no toma solicitudes libres")
         self.assertIn("repartir_equipo(", bucle, "el admin sigue repartiendo")
+        i = bucle.index("tomar_libre(")
+        self.assertIn("respaldo_activo(", bucle[:i], "el PEM solo toma una libre como RESPALDO (sin admin)")
 
     def test_pin_admin_fijo(self):
         self.assertTrue(reparto_equipo.pin_admin_valido("2416"))

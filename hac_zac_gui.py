@@ -232,6 +232,20 @@ class App(tk.Tk):
                 pass
         self._tarea_pres = self.after(60000, self._publicar_presencia)
 
+    def _avisar_salida(self, franja, caso, ahora):
+        """10 min antes de terminar el turno, si tiene una solicitud abierta, avisa una vez."""
+        from hac_zac import turnos
+        if not caso or not turnos.aviso_salida(franja, ahora):
+            return
+        clave = (ahora.date().isoformat(), caso)
+        if getattr(self, "_aviso_salida", None) == clave:
+            return
+        self._aviso_salida = clave
+        fin = turnos.horario(franja, ahora)[1].strftime("%H:%M")
+        self.after(10, lambda: messagebox.showwarning(
+            "Fin de turno", "Su turno termina a las %s y sigue con la solicitud %s abierta.\n\nCiérrela, o "
+            "Libérela en la Cola, o pídale al admin que la reasigne." % (fin, caso), parent=self))
+
     @staticmethod
     def _mi_caso(nombre):
         """ID de mi solicitud abierta (En proceso) o '' (Disponible)."""
@@ -284,8 +298,14 @@ class App(tk.Tk):
             if pausa:
                 texto, color = presencia.texto_pausa(pausa), C["warn"]
             elif estado == "en_linea":
-                clave, texto = presencia.situacion(estado, self._mi_caso(nombre))
-                color = C["acc"] if clave == "en_proceso" else C["ok"]
+                from hac_zac import reparto_equipo, turnos
+                franja = reparto_equipo.franja_de(carpeta, nombre) if carpeta else ""
+                caso = self._mi_caso(nombre)
+                clave, texto = presencia.situacion(estado, caso, None, turnos.situacion(franja, ahora))
+                color = {"en_proceso": C["acc"], "fuera_turno": C["mut"]}.get(clave, C["ok"])
+                if turnos.texto(franja, ahora):
+                    texto += "  ·  " + turnos.texto(franja, ahora)
+                self._avisar_salida(franja, caso, ahora)
             self.lbl_estado.config(text=texto, fg=color)
             self.b_pausa.config(text="▶ Reanudar" if pausa else "⏸ Pausa",
                                 bg=C["acc"] if pausa else C["card2"], fg=C["on_acc"] if pausa else C["warn"])

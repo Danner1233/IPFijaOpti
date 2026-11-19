@@ -3,9 +3,9 @@
 import os
 import queue
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 
-from . import cola
+from . import cola, reparto_equipo, turnos
 from . import panel as P
 from .servicios import Proceso
 
@@ -493,7 +493,7 @@ class PanelCola(tk.Frame):
 # ======================================================================================= EQUIPO
 class PanelEquipo(tk.Frame):
     """Quien esta en proceso, disponible, en pausa, ausente o desconectado (carpeta compartida en OneDrive)."""
-    COLS = ("PEM", "Estado", "Último uso", "En línea hoy")
+    COLS = ("PEM", "Estado", "Turno hoy", "Último uso", "En línea hoy")
 
     def __init__(self, padre, servicio):
         super().__init__(padre, bg=P.C["bg"])
@@ -501,11 +501,14 @@ class PanelEquipo(tk.Frame):
         _titulo(self, "Equipo", "Quién está trabajando (estado automático, nadie lo cambia a mano). "
                 "En proceso: tiene una solicitud abierta (se ve cuál). Disponible: usa la app y no tiene ninguna. "
                 "En pausa: se puso en pausa (almuerzo, reunión...) y no recibe solicitudes. Ausente: la app abierta "
-                "pero 5 minutos sin usarla. Desconectado: cerró la aplicación o su PC no sincroniza.")
-        m, self.t = P._tabla(self, self.COLS, (240, 300, 140, 110), alto=10)
+                "pero 5 minutos sin usarla. Fuera de turno: no es su horario (franja que pone el admin). "
+                "Desconectado: cerró la aplicación o su PC no sincroniza.")
+        m, self.t = P._tabla(self, self.COLS, (220, 300, 160, 130, 100), alto=10)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("en_proceso", foreground=P.C["acc"])
         self.t.tag_configure("disponible", foreground=P.C["ok"])
+        self.t.tag_configure("cierre", foreground=P.C["ok"])
+        self.t.tag_configure("fuera_turno", foreground=P.C["mut"])
         self.t.tag_configure("ausente", foreground=P.C["warn"])
         self.t.tag_configure("pausa", foreground=P.C["warn"])
         self.t.tag_configure("desconectado", foreground=P.C["mut"])
@@ -533,36 +536,45 @@ class PanelEquipo(tk.Frame):
                                  "SharePoint que todos los PEM tengan sincronizada).", fg=P.C["warn"])
         else:
             filas = presencia.equipo(carpeta)
-            orden = {"en_proceso": 0, "disponible": 1, "pausa": 2, "ausente": 3, "desconectado": 4}
-            vistas = sorted(((presencia.situacion(f["estado"], f.get("caso"), f.get("pausa")), f) for f in filas),
-                            key=lambda x: (orden.get(x[0][0], 9), x[1]["nombre"].lower()))
+            franjas = {cola._plano(p["nombre"]): p.get("franja") or "" for p in reparto_equipo.roster(carpeta)}
+            orden = {"en_proceso": 0, "disponible": 1, "cierre": 2, "pausa": 3, "ausente": 4, "fuera_turno": 5,
+                     "desconectado": 6}
+            vistas = []
+            for f in filas:
+                fr = franjas.get(cola._plano(f["nombre"]), "")
+                vistas.append((presencia.situacion(f["estado"], f.get("caso"), f.get("pausa"), turnos.situacion(fr)),
+                               fr, f))
+            vistas.sort(key=lambda x: (orden.get(x[0][0], 9), x[2]["nombre"].lower()))
             cuenta = {}
-            for (clave, texto), f in vistas:
+            for (clave, texto), fr, f in vistas:
                 cuenta[clave] = cuenta.get(clave, 0) + 1
                 self.t.insert("", "end", tags=(clave,), values=(
-                    f["nombre"], texto, presencia.hace(f["ultima_actividad"]),
+                    f["nombre"], texto, turnos.texto(fr) or "—", presencia.hace(f["ultima_actividad"]),
                     ("%d h %02d min" % divmod(f["en_linea_hoy_min"], 60)) if f["en_linea_hoy_min"] else "—"))
-            self.lbl.config(text="%d en proceso · %d disponible(s) · %d en pausa · %d ausente(s) · %d desconectado(s)"
-                                 " · se actualiza cada 30 s" % tuple(cuenta.get(k, 0) for k in (
-                                     "en_proceso", "disponible", "pausa", "ausente", "desconectado"))
+            disp = cuenta.get("disponible", 0) + cuenta.get("cierre", 0)
+            self.lbl.config(text="%d en proceso · %d disponible(s) · %d en pausa · %d ausente(s) · %d fuera de turno · "
+                                 "%d desconectado(s) · se actualiza cada 30 s" % (
+                                     cuenta.get("en_proceso", 0), disp, cuenta.get("pausa", 0),
+                                     cuenta.get("ausente", 0), cuenta.get("fuera_turno", 0),
+                                     cuenta.get("desconectado", 0))
                             if filas else "Nadie ha publicado su estado todavía en esa carpeta.", fg=P.C["mut"])
         self._tarea = self.after(30000, self.refrescar)
 
 
 # ======================================================================================= ADMIN
 class PanelAdmin(tk.Frame):
-    """ROL ADMIN: lista de PEM (agregar, activar/desactivar, quitar) y reparto automatico.
-    El reparto lo hace el Lector de SharePoint de ESTE PC en cada vuelta (Cola -> Iniciar flujo): misma regla que la
-    autoasignacion, solo a PEM activos aqui y Activos en la app (pestana Equipo)."""
-    COLS = ("PEM (nombre como en SharePoint)", "Lista del admin", "En la app", "Última asignación")
+    """ROL ADMIN: lista de PEM COMPARTIDA (carpeta del equipo: agregar, activar/desactivar, franja de turno, quitar),
+    reparto automatico y reasignar. El reparto lo hace el Lector de SharePoint de este PC (Cola -> Iniciar flujo).
+    Con varios admin reparte uno; si se detiene, otro admin conectado lo toma solo."""
+    COLS = ("PEM (nombre como en SharePoint)", "Lista", "Franja", "Turno hoy", "En la app", "Última asignación")
 
     def __init__(self, padre, servicio):
         super().__init__(padre, bg=P.C["bg"])
         self.sv = servicio
-        _titulo(self, "Administrador", "Agregue a cada PEM con su nombre EXACTO de la columna PEM_ASIGNADO y actívelo. "
-                "Se reparte la solicitud libre más antigua al PEM activo que esté usando la app y no tenga ninguna "
-                "abierta (primero el que lleva más tiempo sin recibir). Los PEM ya no se autoasignan: solo reparten los "
-                "administradores. El reparto lo hace su Lector de SharePoint: deje el flujo iniciado en la Cola.")
+        _titulo(self, "Administrador", "Agregue a cada PEM con su nombre EXACTO de PEM_ASIGNADO, actívelo y póngale su "
+                "franja de la semana (Temprano A/B, Medio C/D, Tarde E/F; el sábado usa B, D y F). Recibe la solicitud "
+                "libre más antigua el PEM activo, EN TURNO, usando la app y sin ninguna abierta; deja de recibir 30 min "
+                "antes de su salida. Con varios admin reparte uno y, si se detiene, otro lo toma solo.")
         top = P.ad.Flujo(self, P.C["bg"])
         top.pack(fill="x")
         self.e_nuevo = P._entry(top, width=30)
@@ -571,9 +583,15 @@ class PanelAdmin(tk.Frame):
         P.BOTON(top, "Agregar", self._agregar, True, 10).pack(side="left", padx=6)
         P.BOTON(top, "Activar / Desactivar", self._alternar, False, 20).pack(side="left")
         P.BOTON(top, "Quitar", self._quitar, False, 9).pack(side="left", padx=6)
-        m, self.t = P._tabla(self, self.COLS, (260, 120, 260, 130), alto=9)
+        fr = P.ad.Flujo(self, P.C["bg"], hueco=6)
+        fr.pack(fill="x", pady=(6, 0))
+        tk.Label(fr, text="Franja de la semana:", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9, "bold")).pack(side="left")
+        for clave in ("temprano", "medio", "tarde", ""):
+            P.BOTON(fr, turnos.NOMBRE_FRANJA[clave], lambda c=clave: self._franja(c), False, 11).pack(side="left")
+        P.BOTON(fr, "Reasignar solicitud…", self._reasignar, False, 20).pack(side="left", padx=(12, 0))
+        m, self.t = P._tabla(self, self.COLS, (230, 90, 90, 150, 250, 110), alto=9)
         m.pack(fill="x", pady=8)
-        for tag, color in (("on", P.C["ok"]), ("off", P.C["mut"]), ("lejos", P.C["warn"])):
+        for tag, color in (("on", P.C["ok"]), ("off", P.C["mut"]), ("lejos", P.C["warn"]), ("huerfana", P.C["err"])):
             self.t.tag_configure(tag, foreground=color)
         self.t.bind("<Double-1>", lambda e: self._alternar())
         card = tk.Frame(self, bg=P.C["card"], highlightbackground=P.C["line"], highlightcolor=P.C["line"],
@@ -583,27 +601,37 @@ class PanelAdmin(tk.Frame):
         inner.pack(fill="x", padx=18, pady=12)
         self.repartir = tk.BooleanVar(value=bool(servicio.ajustes.get("admin_repartir")))
         self.simular = tk.BooleanVar(value=bool(servicio.ajustes.get("admin_simular", True)))
+        self.respaldo = tk.BooleanVar(value=bool(servicio.ajustes.get("admin_respaldo", True)))
         tk.Checkbutton(inner, text="Repartir automáticamente", variable=self.repartir, command=self._guardar,
                        bg=P.C["card"], fg=P.C["acc"], activebackground=P.C["card"], selectcolor=P.C["bg"],
                        font=(P.FONT, 11, "bold"), bd=0, highlightthickness=0).pack(side="left")
         tk.Checkbutton(inner, text="Simulación (solo muestra a quién asignaría)", variable=self.simular,
                        command=self._guardar, bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"],
                        selectcolor=P.C["bg"], font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left")
+        tk.Checkbutton(inner, text="Respaldo: si ningún admin reparte en %d min, los PEM en turno se autoasignan"
+                       % reparto_equipo.RESPALDO_MIN, variable=self.respaldo, command=self._guardar,
+                       bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"], selectcolor=P.C["bg"],
+                       font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left")
         self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w", justify="left")
         self.lbl.pack(fill="x", pady=(6, 0))
         P.ad.envolver(self.lbl)
         self._tarea = None
+        self._casos = {}
         self.refrescar()
+
+    def _carpeta(self):
+        return (self.sv.ajustes.get("carpeta_equipo") or "").strip()
 
     def _guardar(self):
         from hac_zac.servicio import guardar_ajustes
         self.sv.ajustes["admin_repartir"] = bool(self.repartir.get())
         self.sv.ajustes["admin_simular"] = bool(self.simular.get())
+        self.sv.ajustes["admin_respaldo"] = bool(self.respaldo.get())
         guardar_ajustes(self.sv.ajustes)
         self.refrescar()
 
     def refrescar(self):
-        from . import presencia, reparto_equipo
+        from . import presencia
         if not self.winfo_exists():
             return
         if self._tarea:
@@ -611,75 +639,177 @@ class PanelAdmin(tk.Frame):
                 self.after_cancel(self._tarea)
             except Exception:
                 pass
-        aj = self.sv.ajustes
-        carpeta = (aj.get("carpeta_equipo") or "").strip()
+        carpeta = self._carpeta()
         filas_eq = {cola._plano(r["nombre"]): r for r in presencia.equipo(carpeta)} if carpeta else {}
-        pres = {k: r["estado"] for k, r in filas_eq.items()}
         sel = self.t.selection()
         for i in self.t.get_children():
             self.t.delete(i)
-        roster = cola.ingenieros()
+        roster = reparto_equipo.roster(carpeta)
+        self._casos, listos, huerfanas = {}, [], []
         for p in roster:
-            est = pres.get(cola._plano(p["nombre"]), "")
-            tag = "off" if not p.get("activo") else ("on" if est == "en_linea" else "lejos")
             fila = filas_eq.get(cola._plano(p["nombre"])) or {}
+            est = fila.get("estado", "")
+            sit_t = turnos.situacion(p.get("franja"))
+            caso = fila.get("caso") or ""
+            if caso:
+                self._casos[p["nombre"]] = caso
+            huerfana = bool(caso) and (est == "desconectado" or sit_t in ("antes", "fuera"))
+            if huerfana:
+                huerfanas.append("%s (%s)" % (p["nombre"], caso))
             if not carpeta:
                 en_app = "— (sin carpeta)"
             elif fila:
-                en_app = presencia.situacion(est, fila.get("caso"), fila.get("pausa"))[1]
+                en_app = presencia.situacion(est, caso, fila.get("pausa"), sit_t)[1]
+                if huerfana:
+                    en_app = "⚠ " + en_app + " · reasignar"
             else:
                 en_app = "○ Sin dato"
+            puede = p.get("activo") and est == "en_linea" and turnos.puede_recibir(p.get("franja"))
+            if puede:
+                listos.append(p["nombre"])
+            tag = "huerfana" if huerfana else ("off" if not p.get("activo") else ("on" if puede else "lejos"))
+            hoy = turnos.texto(p.get("franja")) or "—"
+            if sit_t in ("antes", "fuera"):
+                hoy += " · fuera"
+            elif sit_t == "corte":
+                hoy += " · cierre"
             self.t.insert("", "end", iid=p["nombre"], tags=(tag,), values=(
-                p["nombre"], "● Activo" if p.get("activo") else "○ Inactivo", en_app,
+                p["nombre"], "● Activo" if p.get("activo") else "○ Inactivo",
+                turnos.NOMBRE_FRANJA.get(p.get("franja") or "", "Sin franja"), hoy, en_app,
                 p["ultimo"].replace("T", " ")[5:16] if p.get("ultimo") else "—"))
         if sel and self.t.exists(sel[0]):
             self.t.selection_set(sel[0])
-        listos = [p["nombre"] for p in roster if p.get("activo") and pres.get(cola._plano(p["nombre"])) == "en_linea"]
-        if not carpeta:
-            msg, color = "Falta la carpeta del equipo en Ajustes: sin ella no se sabe quién está en línea y no se reparte.", P.C["err"]
-        elif not self.repartir.get():
-            msg, color = "Reparto apagado. Active «Repartir automáticamente».", P.C["mut"]
-        elif self.simular.get():
-            msg, color = ("SIMULACIÓN: su Lector de SharePoint mostrará en la Cola a quién asignaría, sin escribir. "
-                          "Pueden recibir ahora: %s." % (", ".join(listos) or "nadie")), P.C["warn"]
-        else:
-            cod, minutos, faltan = reparto_equipo.estado_publicacion(carpeta, roster)
-            if cod == "sin_archivo":
-                msg, color = ("REPARTO DETENIDO: su Lector de SharePoint todavía no ha repartido. Vaya a la Cola y "
-                              "pulse ▶ Iniciar flujo; mientras tanto nadie recibe solicitudes."), P.C["err"]
-            elif cod == "detenido":
-                msg, color = ("REPARTO DETENIDO: su Lector de SharePoint no reparte hace %d min, así que nadie está "
-                              "recibiendo solicitudes. Vaya a la Cola y pulse ▶ Iniciar flujo." % minutos), P.C["err"]
-            else:
-                msg, color = ("Repartiendo DE VERDAD (última vuelta hace %d min). Pueden recibir ahora: %s."
-                              % (minutos, ", ".join(listos) or "nadie")), P.C["ok"]
-                if faltan:
-                    msg += " Recién agregados (entran en la próxima vuelta): %s." % ", ".join(faltan)
+        msg, color = self._estado_reparto(carpeta, roster, listos)
+        if huerfanas:
+            msg += "  ⚠ Con solicitud abierta y desconectado o fuera de turno: %s. Selecciónelo y pulse «Reasignar»." \
+                   % ", ".join(huerfanas)
+            color = P.C["err"]
         self.lbl.config(text=msg, fg=color)
         self._tarea = self.after(30000, self.refrescar)
+
+    def _estado_reparto(self, carpeta, roster, listos):
+        yo = self.sv.ajustes.get("pem_nombre", "")
+        recibir = ", ".join(listos) or "nadie"
+        if not carpeta:
+            return ("Falta la carpeta del equipo en Ajustes: sin ella no se sabe quién está en línea y no se reparte.",
+                    P.C["err"])
+        otro, s = reparto_equipo.quien_reparte(carpeta)
+        lo_hace_otro = otro and not reparto_equipo.mismo(otro, yo) and s is not None and s <= reparto_equipo.LIDER_S
+        if not self.repartir.get():
+            if lo_hace_otro:
+                return "Reparte %s (hace %d s). Pueden recibir ahora: %s." % (otro, s, recibir), P.C["ok"]
+            return "Reparto apagado. Active «Repartir automáticamente».", P.C["mut"]
+        if self.simular.get():
+            return ("SIMULACIÓN: su Lector de SharePoint mostrará en la Cola a quién asignaría, sin escribir. "
+                    "Pueden recibir ahora: %s." % recibir), P.C["warn"]
+        if lo_hace_otro:
+            return ("Reparte %s (hace %d s). Usted queda de RESPALDO: si deja de repartir %d s, su app toma el reparto "
+                    "sola. Pueden recibir ahora: %s." % (otro, s, reparto_equipo.LIDER_S, recibir)), P.C["ok"]
+        cod, minutos, faltan = reparto_equipo.estado_publicacion(carpeta, roster)
+        if cod in ("sin_archivo", "detenido"):
+            extra = (" Mientras tanto los PEM en turno se autoasignan (respaldo)." if self.respaldo.get() else
+                     " Mientras tanto nadie recibe solicitudes.")
+            base = ("todavía no ha repartido" if cod == "sin_archivo" else "no reparte hace %d min" % minutos)
+            return ("REPARTO DETENIDO: su Lector de SharePoint %s. Vaya a la Cola y pulse ▶ Iniciar flujo.%s"
+                    % (base, extra)), P.C["err"]
+        msg = "Repartiendo DE VERDAD (última vuelta hace %d min). Pueden recibir ahora: %s." % (minutos, recibir)
+        if faltan:
+            msg += " Recién agregados (entran en la próxima vuelta): %s." % ", ".join(faltan)
+        return msg, P.C["ok"]
+
+    def _sel(self):
+        sel = self.t.selection()
+        return sel[0] if sel else None
 
     def _agregar(self):
         n = " ".join(self.e_nuevo.get().split())
         if n:
-            cola.agregar_ingeniero(n)
+            reparto_equipo.agregar(self._carpeta(), n)
             self.e_nuevo.delete(0, "end")
             self.refrescar()
 
     def _alternar(self):
-        sel = self.t.selection()
-        if sel:
-            actual = next((i for i in cola.ingenieros() if i["nombre"] == sel[0]), {})
-            cola.poner_activo(sel[0], not actual.get("activo"))
+        n = self._sel()
+        if n:
+            actual = next((i for i in reparto_equipo.roster(self._carpeta()) if i["nombre"] == n), {})
+            reparto_equipo.poner_activo(self._carpeta(), n, not actual.get("activo"))
             self.refrescar()
 
+    def _franja(self, franja):
+        n = self._sel()
+        if not n:
+            messagebox.showinfo("Franja", "Seleccione un PEM de la lista.", parent=self)
+            return
+        reparto_equipo.poner_franja(self._carpeta(), n, franja)
+        self.refrescar()
+
     def _quitar(self):
-        sel = self.t.selection()
-        if sel and messagebox.askyesno("Quitar", "¿Quitar a %s de la lista?" % sel[0]):
-            cola.quitar_ingeniero(sel[0])
+        n = self._sel()
+        if n and messagebox.askyesno("Quitar", "¿Quitar a %s de la lista?" % n, parent=self):
+            reparto_equipo.quitar(self._carpeta(), n)
             self.refrescar()
+
+    def _reasignar(self):
+        """Pasa la solicitud abierta del PEM seleccionado a otro PEM activo (la escribe su Lector de SharePoint)."""
+        de = self._sel()
+        if not de:
+            messagebox.showinfo("Reasignar", "Seleccione al PEM que tiene la solicitud.", parent=self)
+            return
+        caso = self._casos.get(de) or simpledialog.askstring(
+            "Reasignar", "%s no publica una solicitud abierta.\nEscriba el ID de la solicitud a reasignar:" % de,
+            parent=self)
+        if not caso or not str(caso).strip().isdigit():
+            return
+        otros = [p["nombre"] for p in reparto_equipo.roster(self._carpeta())
+                 if p.get("activo") and p["nombre"] != de]
+        if not otros:
+            messagebox.showinfo("Reasignar", "No hay otro PEM activo en la lista.", parent=self)
+            return
+        a = _elegir(self, "Reasignar la %s" % caso, "¿A quién se la pasa? (la de %s)" % de, otros)
+        if not a:
+            return
+        if not messagebox.askyesno("Reasignar", "¿Pasar la solicitud %s de %s a %s?\nQueda una nota en "
+                                   "Observaciones." % (caso, de, a), parent=self):
+            return
+        cola.pedir_reasignar(str(caso).strip(), de, a, self.sv.ajustes.get("pem_nombre", "") or "admin")
+        messagebox.showinfo("Reasignar", "Pedido. Su Lector de SharePoint la reasigna en la próxima vuelta "
+                            "(debe tener el flujo iniciado en la Cola).", parent=self)
 
     def detener_todo(self):
         pass                                   # el reparto vive en el Lector de SharePoint (pestana Cola)
+
+
+def _elegir(padre, titulo, texto, opciones):
+    """Ventana con una lista para elegir una opcion. Devuelve la elegida o None."""
+    v = tk.Toplevel(padre)
+    v.title(titulo)
+    v.configure(bg=P.C["bg"])
+    v.transient(padre.winfo_toplevel())
+    tk.Label(v, text=texto, bg=P.C["bg"], fg=P.C["txt"], font=(P.FONT, 10, "bold"), anchor="w").pack(
+        fill="x", padx=18, pady=(14, 6))
+    lb = tk.Listbox(v, height=min(10, len(opciones)), bg=P.C["card2"], fg=P.C["txt"], relief="flat",
+                    selectbackground=P.C["acc"], font=(P.FONT, 10), exportselection=False)
+    for o in opciones:
+        lb.insert("end", o)
+    lb.pack(fill="both", expand=True, padx=18)
+    lb.selection_set(0)
+    res = {"v": None}
+
+    def ok(e=None):
+        s = lb.curselection()
+        res["v"] = opciones[s[0]] if s else None
+        v.destroy()
+
+    b = P.ad.Flujo(v, P.C["bg"])
+    b.pack(fill="x", padx=18, pady=12)
+    P.BOTON(b, "Elegir", ok, True, 10).pack(side="left")
+    P.BOTON(b, "Cancelar", v.destroy, False, 10).pack(side="left", padx=6)
+    lb.bind("<Double-1>", ok)
+    v.update_idletasks()
+    v.minsize(min(P.ad.px(360), v.winfo_screenwidth() - 40), v.winfo_reqheight())
+    v.grab_set()
+    v.wait_window()
+    return res["v"]
 
 
 # ======================================================================================= REPORTES (admin)

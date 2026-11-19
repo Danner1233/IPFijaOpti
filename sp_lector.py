@@ -145,6 +145,63 @@ const base = arguments[0], ruta = arguments[1], id = arguments[2], nombre = argu
 """
 
 
+# ADMIN: pasa la solicitud del PEM 'de' al PEM 'a' (solo si sigue a nombre de 'de'), deja Est_Seg en Asignada y
+# agrega la nota en Observaciones.
+JS_REASIGNAR = r"""
+const cb = arguments[arguments.length - 1];
+const base = arguments[0], ruta = arguments[1], id = arguments[2], de = arguments[3], a = arguments[4],
+      nota = arguments[5] || '';
+(async () => {
+  try {
+    const h = {'Accept': 'application/json;odata=minimalmetadata'};
+    const ci = await fetch(ruta + '/_api/contextinfo', {method: 'POST', headers: h, credentials: 'same-origin'});
+    const digest = (await ci.json()).FormDigestValue;
+    const item = base + '(' + id + ')';
+    const g = await fetch(item, {headers: h, credentials: 'same-origin'});
+    const j = await g.json();
+    const pem = String(j.PEM_ASIGNADO || '');
+    const plano = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    if (!pem || !plano(de).split(/\s+/).every(w => plano(pem).includes(w))) {
+      cb({ok: false, motivo: 'ya no esta a nombre de ' + de + ' (PEM: ' + pem + ')', antes: j.Est_Seg || ''}); return;
+    }
+    const etag = j['odata.etag'] || g.headers.get('ETag');
+    const obs = (j.Observaciones ? j.Observaciones + (/<(div|p|br)[\s>\/]/i.test(j.Observaciones) ? '<br>' : '\n') : '') + nota;
+    const r = await fetch(item, {method: 'POST', credentials: 'same-origin',
+      body: JSON.stringify(Object.assign({PEM_ASIGNADO: a, Est_Seg: 'Asignada'}, nota ? {Observaciones: obs} : {})),
+      headers: {'Accept': 'application/json;odata=nometadata', 'Content-Type': 'application/json;odata=nometadata',
+                'X-RequestDigest': digest, 'IF-MATCH': etag, 'X-HTTP-Method': 'MERGE'}});
+    cb({ok: r.ok, status: r.status, antes: j.Est_Seg || '', motivo: r.ok ? '' : (await r.text()).slice(0, 200)});
+  } catch (e) { cb({ok: false, motivo: String(e)}); }
+})();
+"""
+
+
+def nota_reasignar(por, de, a, ahora=None):
+    from datetime import datetime
+    return "[%s] Admin %s: reasignó la solicitud de %s a %s" % ((ahora or datetime.now()).strftime("%d/%m %H:%M"),
+                                                               por, de, a)
+
+
+def enviar_reasignaciones(driver):
+    """ADMIN: reasignaciones pedidas en la pestana Admin."""
+    n = 0
+    for id_, p in cola.reasignar_pendientes().items():
+        try:
+            r = driver.execute_async_script(JS_REASIGNAR, BASE_ITEMS, RUTA_SITIO, id_, p["de"], p["a"],
+                                            nota_reasignar(p.get("por", ""), p["de"], p["a"]))
+        except Exception as e:
+            r = {"ok": False, "motivo": str(e)}
+        cola.resultado_reasignar(id_, r.get("ok"), r.get("motivo", ""))
+        cola.registrar_escritura_sp(id_, "PEM_ASIGNADO", p["de"], p["a"], r.get("ok"), r.get("motivo", ""),
+                                    est_seg="Asignada")
+        if r.get("ok"):
+            print("   [admin] solicitud %s reasignada de %s a %s" % (id_, p["de"], p["a"]))
+            n += 1
+        else:
+            print("   [admin] no pude reasignar la %s: %s" % (id_, r.get("motivo")))
+    return n
+
+
 def cambios_estado(estado, causa="", observacion="", pem="", ahora=None):
     """(campos, nota, columnas_de_causa) para JS_ESTADO. La causa va en la columna de su estado y se limpia la del
     otro estado; con Exitosa se limpian las dos. La nota (para Observaciones) solo si hay causa u observacion."""
@@ -246,11 +303,16 @@ def repartir_equipo(driver, items, aj, log=print):
     if not es_admin_repartiendo(aj):
         return []
     carpeta = aj.get("carpeta_equipo", "")
-    roster = cola.ingenieros()
     simular = bool(aj.get("admin_simular"))
     if not carpeta:
         log("   [admin] falta la carpeta del equipo en Ajustes: no se puede ver quien esta en linea")
         return []
+    yo = aj.get("pem_nombre", "")
+    if not simular and not reparto_equipo.debo_repartir(carpeta, yo):
+        otro, s = reparto_equipo.quien_reparte(carpeta)
+        log("   [admin] reparte %s (hace %d s): usted queda de respaldo" % (otro, s or 0))
+        return []
+    roster = reparto_equipo.roster(carpeta)
     plan = reparto_equipo.plan(items, roster, reparto_equipo.presencia_por_nombre(carpeta))
     hechas = []
     for it, nombre in plan:
@@ -264,10 +326,10 @@ def repartir_equipo(driver, items, aj, log=print):
                     p["ultimo"] = datetime.now().isoformat(timespec="seconds")
             log("   [admin] solicitud %s asignada a %s" % (it.get("ID"), nombre))
     if hechas:
-        cola.guardar_ingenieros(roster)
+        reparto_equipo.guardar_roster(carpeta, roster)
     if not simular:
         try:
-            reparto_equipo.publicar(carpeta, roster, aj.get("pem_nombre", ""))
+            reparto_equipo.publicar(carpeta, roster, yo, respaldo=aj.get("admin_respaldo", True))
         except OSError as e:
             log("   [admin] no pude publicar el reparto en la carpeta del equipo: %s" % e)
     return hechas
@@ -390,14 +452,28 @@ def main():
         while True:
             try:
                 aplicar_visibilidad(d, "sp")
-                if enviar_estados_pendientes(d) + enviar_liberaciones(d):
+                if enviar_estados_pendientes(d) + enviar_liberaciones(d) + enviar_reasignaciones(d):
                     time.sleep(1)
                 items = leer_items(d, a.debug)
                 aj = cola._leer("ajustes.json", {})
                 if repartir_equipo(d, items, aj):          # rol admin: reparte entre los PEM activos y en linea
                     items = leer_items(d)
-                # Solo los administradores asignan (pestana Admin): la app del PEM ya no se autoasigna.
-                # Aqui solo se ven las solicitudes que me asignaron y se pasan a mi Cola.
+                for sid in cola.soltar_si_ya_no_es_mia(items, nombre):
+                    print("   la solicitud %s ya no es mia (el admin la reasigno): sale de mi cola" % sid)
+                # Asignan los administradores (pestana Admin). RESPALDO: si ningun admin reparte en 5 min, el PEM en
+                # turno y activo en la lista se autoasigna una a la vez (SharePoint evita las dobles).
+                carpeta = aj.get("carpeta_equipo", "")
+                if not presencia.mi_pausa() and reparto_equipo.respaldo_activo(carpeta, nombre):
+                    abiertas = cola.mis_casos(nombre)
+                    sin_cerrar = cola.abiertas_sp(items, nombre, MAX_HORAS)
+                    libres = [x for x in items if cola.es_libre(x)]
+                    if not abiertas and not sin_cerrar and libres:
+                        print("   [respaldo] ningun admin reparte hace %d min: tomo la mas antigua"
+                              % reparto_equipo.RESPALDO_MIN)
+                        tomada = tomar_libre(d, items, nombre, a.simular)
+                        if tomada:
+                            TOMADAS.add(str(tomada))
+                            items = leer_items(d)
                 n = procesar(items, nombre)
                 print(time.strftime("%H:%M:%S"), "mis solicitudes nuevas:", n)
             except Exception as e:

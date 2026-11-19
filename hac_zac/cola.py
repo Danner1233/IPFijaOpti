@@ -269,6 +269,55 @@ def resultado_liberar(id_, ok, error=""):
         _escribir(LIBERAR, datos)
 
 
+# ---- reasignar (ADMIN): pasar una solicitud de un PEM a otro (p. ej. se desconecto o termino su turno)
+REASIGNAR = "sp_reasignar.json"
+
+
+@bloqueado
+def pedir_reasignar(id_, de, a, por):
+    datos = _leer(REASIGNAR, {})
+    datos[str(id_)] = {"de": de, "a": a, "por": por, "ok": False, "intentos": 0, "pedido": _ahora(), "error": ""}
+    _escribir(REASIGNAR, datos)
+
+
+def reasignar_pendientes():
+    return {i: v for i, v in _leer(REASIGNAR, {}).items()
+            if not v.get("ok") and v.get("intentos", 0) < MAX_INTENTOS_SP}
+
+
+@bloqueado
+def resultado_reasignar(id_, ok, error=""):
+    datos = _leer(REASIGNAR, {})
+    v = datos.get(str(id_))
+    if v:
+        v["ok"], v["error"] = bool(ok), "" if ok else str(error)[:200]
+        if ok:
+            v["hecha_en"] = _ahora()
+        else:
+            v["intentos"] = v.get("intentos", 0) + 1
+        _escribir(REASIGNAR, datos)
+
+
+@bloqueado
+def soltar_si_ya_no_es_mia(items, nombre):
+    """Mis solicitudes abiertas que en SharePoint ya tienen OTRO PEM (el admin las reasigno): salen de mi cola.
+    Devuelve los ids soltados."""
+    por_id = {str(it.get("ID")): it for it in items}
+    c = _cola()
+    soltadas = []
+    for s in c["solicitudes"]:
+        it = por_id.get(s["id"])
+        if s["estado"] in ABIERTOS and s["asignado"] == nombre and it is not None:
+            pem = str(it.get("PEM_ASIGNADO") or "").strip()
+            if pem and _plano(pem) != _plano(nombre):
+                s["estado"] = "reasignada"
+                s["reasignada_a"] = pem
+                soltadas.append(s["id"])
+    if soltadas:
+        _escribir("cola.json", c)
+    return soltadas
+
+
 def liberadas_recientes(horas=NO_RETOMAR_H):
     """Ids que YO libere hace poco: no se vuelven a tomar (si no, el lector la retomaria enseguida)."""
     out = set()

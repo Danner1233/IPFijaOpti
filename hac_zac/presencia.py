@@ -203,15 +203,20 @@ def hace(iso, ahora=None):
 ETIQUETA = {"en_linea": "● Activo", "ausente": "◐ Ausente", "desconectado": "○ Desconectado", "pausa": "⏸ En pausa"}
 
 
-def situacion(estado, caso="", pausa=None):
+def situacion(estado, caso="", pausa=None, turno=None):
     """Lo que se muestra del PEM en Equipo/Admin: (clave, texto).
-    en_proceso / disponible (activo con o sin solicitud), pausa, ausente, desconectado."""
+    en_proceso / disponible (activo con o sin solicitud), cierre (ultimos 30 min del turno: ya no recibe),
+    fuera_turno, pausa, ausente, desconectado. `turno` = turnos.situacion(franja) o None."""
     if estado == "desconectado":
-        return "desconectado", ETIQUETA["desconectado"]
+        return "desconectado", ETIQUETA["desconectado"] + (" · con la %s" % caso if caso else "")
     if estado == "pausa" or pausa:
         return "pausa", texto_pausa(pausa or {})
     if estado == "ausente":
         return "ausente", ETIQUETA["ausente"] + (" · con la %s" % caso if caso else "")
     if caso:
         return "en_proceso", "● En proceso · %s" % caso
+    if turno in ("antes", "fuera"):
+        return "fuera_turno", "○ Fuera de turno"
+    if turno == "corte":
+        return "cierre", "● Disponible · cierre de turno (ya no recibe)"
     return "disponible", "● Disponible"

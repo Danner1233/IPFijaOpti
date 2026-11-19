@@ -77,3 +77,9 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Solo los administradores asignan (reparto en la pestaña Admin): el lector del PEM ya no se autoasigna
   (`cola.auto_asignar_configurado()` es False). PIN de admin fijo (`reparto_equipo.PIN_ADMIN`, solo la huella).
   Equipo/Admin muestran `presencia.situacion`: En proceso (con la solicitud), Disponible, En pausa, Ausente, Desconectado.
+- Turnos (`hac_zac/turnos.py`): franja semanal por PEM (temprano A/B, medio C/D, tarde E/F; sábado = B/D/F; domingo
+  sin turno); solo recibe en turno, corte 30 min antes de salir, aviso 10 min antes si tiene una abierta.
+  Lista de PEM compartida en `<carpeta_equipo>/roster.json` (`reparto_equipo.roster/agregar/poner_franja`).
+  Varios admin: reparte uno (`debo_repartir`, LIDER_S 90 s) y otro lo toma si se detiene; respaldo de PEM en turno
+  tras RESPALDO_MIN 5 min sin admin (`respaldo_activo`, ajuste `admin_respaldo`). Reasignar desde Admin
+  (`cola.pedir_reasignar` → `sp_lector.JS_REASIGNAR`; el PEM anterior la suelta con `cola.soltar_si_ya_no_es_mia`).
