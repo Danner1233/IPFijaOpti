@@ -368,6 +368,15 @@ class App(tk.Tk):
                          padx=10, pady=3, cursor="hand2")
         b_ips.pack(side="right", padx=(8, 0))
         b_ips.bind("<Button-1>", lambda e: self._ips_libres())
+        # Contingencia: buscador de IPs por nodo (Excel) y guia del proceso manual
+        b_nodo = tk.Label(h, text="IPs por nodo", bg=C["card2"], fg=C["acc"], font=(FONT, 10, "bold"),
+                          padx=10, pady=3, cursor="hand2")
+        b_nodo.pack(side="right", padx=(8, 0))
+        b_nodo.bind("<Button-1>", lambda e: self._buscador_ips())
+        b_emg = tk.Label(h, text="⚠ Emergencia", bg=C["card2"], fg=C["err"], font=(FONT, 10, "bold"),
+                         padx=10, pady=3, cursor="hand2")
+        b_emg.pack(side="right", padx=(8, 0))
+        b_emg.bind("<Button-1>", lambda e: self._emergencia())
         self.b_nueva = tk.Label(h, text="＋ Nueva solicitud", bg=C["acc"], fg=C["on_acc"], font=(FONT, 10, "bold"),
                                 padx=10, pady=3, cursor="hand2")
         if not self.centro:
@@ -548,6 +557,25 @@ class App(tk.Tk):
         else:
             self.v_ips.refrescar()
             self._mostrar(self.v_ips)
+
+    def _nodo_actual(self):
+        """NODO de la solicitud abierta (linea 'NODO:' de la plantilla), si hay."""
+        import re
+        for v in (getattr(self, "v_res", None), getattr(self, "v_form", None)):
+            rec = getattr(v, "rec", None) or {}
+            for k in ("txt_sol", "preview"):
+                m = re.search(r"^\s*NODO\s*:[ \t]*(\S+)", str(rec.get(k) or ""), re.I | re.M)
+                if m:
+                    return m.group(1)
+        return ""
+
+    def _buscador_ips(self):
+        from hac_zac import panel_emergencia
+        panel_emergencia.VentanaIPs(self, self.sv, self._nodo_actual())
+
+    def _emergencia(self):
+        from hac_zac import panel_emergencia
+        panel_emergencia.VentanaEmergencia(self, self.sv)
 
     def _ips_libres(self):
         """Reabre el recuadro de segmentos/IP libres (de la solicitud abierta o la mas reciente)."""

@@ -83,3 +83,8 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   Varios admin: reparte uno (`debo_repartir`, LIDER_S 90 s) y otro lo toma si se detiene; respaldo de PEM en turno
   tras RESPALDO_MIN 5 min sin admin (`respaldo_activo`, ajuste `admin_respaldo`). Reasignar desde Admin
   (`cola.pedir_reasignar` → `sp_lector.JS_REASIGNAR`; el PEM anterior la suelta con `cola.soltar_si_ya_no_es_mia`).
+- Ritmo del reparto (`reparto_equipo.RITMO`/`en_descanso`): el PEM que acaba de cerrar (Modified de SP) descansa
+  15 s con 1-3 libres, 8 s con 4, nada con 5+.
+- Contingencia (`hac_zac/panel_emergencia.py`, botones del encabezado): Guía de emergencia (`GUIA`, comandos iguales
+  al script; prueba en test_ritmo_buscador) y Buscador de IPs por nodo (`hac_zac/buscador_ips.py`: lee el .xlsx sin
+  openpyxl; índice sin datos de clientes en `<carpeta_equipo>/buscador_ips.json`; «Actualizar Excel…»).

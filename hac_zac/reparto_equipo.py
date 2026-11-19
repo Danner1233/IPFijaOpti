@@ -62,6 +62,51 @@ def liberadores(item):
     return set(m.strip() for m in re.findall(r"pem ([^:\]\[]+?): " + NOTA_LIBERO, obs))
 
 
+# ---------------------------------------------------------------------------------------------- ritmo
+# Cuantas libres hay decide cuanto descansa el PEM que ACABA de cerrar una antes de recibir la siguiente:
+# pocas libres -> descansa; muchas -> se reparte sin pausa. [(maximo de libres, segundos de descanso)]
+RITMO = ((3, 15), (4, 8))          # 1-3 libres: 15 s · 4 libres: 8 s · 5 o mas: sin descanso
+
+
+def descanso_s(libres):
+    for tope, segundos in RITMO:
+        if libres <= tope:
+            return segundos
+    return 0
+
+
+def ultimo_cierre(items, nombre):
+    """Hora (local) en que `nombre` cerro su ultima solicitud en SharePoint (Est_Seg final; 'Modified')."""
+    mejor = None
+    for it in items:
+        d = cola.desde_sp(it)
+        if _plano(d.get("est_seg")) not in cola.ESTADOS_FINALES:
+            continue
+        pem = _plano(d.get("pem"))
+        if not pem or not all(w in pem for w in _plano(nombre).split()):
+            continue
+        t = cola._a_local(it.get("Modified"))
+        if t and (mejor is None or t > mejor):
+            mejor = t
+    return mejor
+
+
+def en_descanso(items, roster, ahora=None):
+    """{nombre: segundos que le faltan} de los PEM que acaban de cerrar y aun descansan (segun cuantas libres hay)."""
+    ahora = ahora or datetime.now()
+    seg = descanso_s(sum(1 for it in items if cola.es_libre(it)))
+    out = {}
+    if not seg:
+        return out
+    for p in roster:
+        t = ultimo_cierre(items, p["nombre"])
+        if t:
+            falta = seg - (ahora - t).total_seconds()
+            if falta > 0:
+                out[p["nombre"]] = int(falta + 0.999)
+    return out
+
+
 def elegibles(roster, presencia_por_nombre, ocup, ahora=None):
     """PEM activos por el admin, EN TURNO, Activos en la app y libres; primero el que lleva mas tiempo sin recibir."""
     cand = [p for p in roster if p.get("activo") and p["nombre"] not in ocup and
@@ -72,7 +117,7 @@ def elegibles(roster, presencia_por_nombre, ocup, ahora=None):
 
 def plan(items, roster, presencia_por_nombre, ahora=None):
     """[(item, nombre)] a asignar ahora."""
-    ocup = ocupados(items, roster, ahora)
+    ocup = ocupados(items, roster, ahora) | set(en_descanso(items, roster, ahora))   # ritmo: descansan un poco
     cand = elegibles(roster, presencia_por_nombre, ocup, ahora)
     libres = sorted((it for it in items if cola.es_libre(it)), key=lambda i: str(i.get("Created") or ""))
     out = []

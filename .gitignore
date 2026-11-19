@@ -40,3 +40,5 @@ conexion.json
 reportes_pendientes.json
 reportes/
 sp_reasignar.json
+buscador_ips.json
+*.xlsx

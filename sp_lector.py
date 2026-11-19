@@ -313,6 +313,10 @@ def repartir_equipo(driver, items, aj, log=print):
         log("   [admin] reparte %s (hace %d s): usted queda de respaldo" % (otro, s or 0))
         return []
     roster = reparto_equipo.roster(carpeta)
+    descansan = reparto_equipo.en_descanso(items, roster)
+    if descansan:
+        log("   [admin] ritmo (%d libres): descansan %s" % (sum(1 for it in items if cola.es_libre(it)), ", ".join(
+            "%s %d s" % kv for kv in descansan.items())))
     plan = reparto_equipo.plan(items, roster, reparto_equipo.presencia_por_nombre(carpeta))
     hechas = []
     for it, nombre in plan:

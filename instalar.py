@@ -20,7 +20,7 @@ DATOS_USUARIO = {"ajustes.json", "credenciales.json", "historial_capa2.json", "c
                  "sp_pendientes.json", "registro_sharepoint.jsonl", "historial_documentacion.json",
                  "documentacion.json", "plantilla_base.txt", "correos_vistos.txt",
                  "pausa.json", "conexion.json", "reportes_pendientes.json",
-                 "sp_liberar.json", "sp_reasignar.json"}
+                 "sp_liberar.json", "sp_reasignar.json", "buscador_ips.json"}
 CARPETAS_USUARIO = {"solicitudes", "demoras", "browser_profile"}
 
 
