@@ -272,6 +272,10 @@ class PanelPlantilla(tk.Frame):
 
         fila_copiable("equipo", "MAC", True)
         fila_copiable("rr", "Cuenta RR")
+        # nombre del cliente como lo pone el script en el equipo (NOMBRE_RR) y, si lleva bridge, con _BRIDGE
+        fila_copiable("cliente", "Cliente")
+        self.b_con_bridge = BOTON(self.ent_ont["cliente"].master, "Con BRIDGE",
+                                  lambda: self._copiar_ont("cliente_bridge"), False, 11)
 
         # ---- 3) segmentos
         c3 = tarjeta("SEGMENTOS  ·  doble clic: ver IP libres  ·  clic + Ctrl+C: copiar")
@@ -328,6 +332,7 @@ class PanelPlantilla(tk.Frame):
         BOTON(barra, "Copiar solicitud", self._copiar, True, 16).pack(side="left")
         BOTON(barra, "Copiar direccionamiento final", self._copiar_direccionamiento, True, 26).pack(side="left", padx=5)
         BOTON(barra, "Guardar .txt", self._guardar, False, 12).pack(side="left")
+        BOTON(barra, "Copiar datos de reporte", self._copiar_reporte, False, 22).pack(side="left", padx=5)
         self.b_mas = BOTON(barra, "Más ▾", lambda: menu_mas(self.b_mas, [
             ("Guardar con otro nombre…", self._con_nombre), ("Regenerar plantilla", self._regenerar), None,
             ("Abrir en Netcracker", self._netcracker), ("Caso bridge", self._caso)]), False, 8)
@@ -356,8 +361,11 @@ class PanelPlantilla(tk.Frame):
             sol = _pl.parsear_solicitud(rec.get("txt_sol", "")) if rec.get("txt_sol") else {}
         except Exception:
             sol = {}
+        rr = rec.get("rr") or sol.get("rr", "")
+        desc = e.get("descripcion") or _pl.descripcion_cliente(rec.get("cliente") or sol.get("cliente", ""), rr)
+        bridge = bool(e.get("bridge")) if "bridge" in e else bool(sol.get("bridge"))
         self._poner_ont(rec.get("serial") or sol.get("serial_ont", ""), rec.get("mac") or sol.get("mac_ont", ""),
-                        rec.get("rr") or sol.get("rr", ""))
+                        rr, desc, bridge)
         for i in self.tabla.get_children():
             self.tabla.delete(i)
         for s in op.get("segmentos") or []:
@@ -646,6 +654,16 @@ class PanelPlantilla(tk.Frame):
         self.update()
         self.lbl_est.config(text="Solicitud copiada al portapapeles.")
 
+    def _copiar_reporte(self):
+        """RR / REGIONAL / ALIADO de la solicitud, para reportar una falla."""
+        from . import plantilla as _pl
+        texto = (self.rec or {}).get("txt_sol") or _pl.extraer_solicitud(self._texto())
+        datos = _pl.datos_reporte(texto)
+        self.clipboard_clear()
+        self.clipboard_append(datos)
+        self.update()
+        self.lbl_est.config(text="Copiado: " + datos.replace("\n", " · "))
+
     def _modo_cuerpo(self, modo):
         """Ancha: plantilla alta al lado. Angosta: plantilla más baja debajo de los datos."""
         try:
@@ -653,21 +671,28 @@ class PanelPlantilla(tk.Frame):
         except Exception:
             pass
 
-    def _poner_ont(self, serial, mac, rr):
-        """Muestra UN solo dato del equipo (MAC si se tiene; si no, el serial) y la cuenta RR."""
+    def _poner_ont(self, serial, mac, rr, descripcion="", bridge=False):
+        """Muestra UN solo dato del equipo (MAC si se tiene; si no, el serial), la cuenta RR y el nombre del
+        cliente (NOMBRE_RR); si la cuenta lleva bridge, aparece «Con BRIDGE»."""
+        from . import plantilla as _pl
         if mac:
             nombre, valor = "MAC", mac
         elif serial:
             nombre, valor = "Serial", serial
         else:
             nombre, valor = "Serial / MAC", ""
-        self._ont_valores = {"equipo": valor, "rr": rr or ""}
+        self._ont_valores = {"equipo": valor, "rr": rr or "", "cliente": descripcion or "",
+                             "cliente_bridge": _pl.con_bridge(descripcion) if bridge else ""}
+        if bridge and descripcion:
+            self.b_con_bridge.pack(side="left", padx=(4, 0))
+        else:
+            self.b_con_bridge.pack_forget()
         self.lbl_ont["equipo"].config(text=nombre)
         self.lbl_ont["rr"].config(text="Cuenta RR")
         for k, e in self.ent_ont.items():
             e.config(state="normal")
             e.delete(0, "end")
-            e.insert(0, self._ont_valores[k] or "—")
+            e.insert(0, self._ont_valores.get(k) or "—")
             e.config(state="readonly")
         # «Sin :» solo tiene sentido para una MAC
         if nombre == "MAC":
@@ -678,7 +703,9 @@ class PanelPlantilla(tk.Frame):
     def _copiar_ont(self, clave, sin_puntos=False):
         v = (getattr(self, "_ont_valores", {}) or {}).get(clave, "")
         if not v:
-            self.lbl_est.config(text="No hay %s para copiar." % ("la cuenta RR" if clave == "rr" else "MAC ni serial"))
+            self.lbl_est.config(text="No hay %s para copiar." % {"rr": "la cuenta RR", "cliente": "nombre del cliente",
+                                                                 "cliente_bridge": "nombre con bridge"}.get(
+                clave, "MAC ni serial"))
             return
         if sin_puntos:
             v = re.sub(r"[^0-9A-Za-z]", "", v)

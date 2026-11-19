@@ -864,6 +864,15 @@ class App(tk.Tk):
         self.b_sol = tk.Label(pie, text="Abrir en Plantilla / Historial", bg=C["card"], fg=C["acc"],
                               font=(FONT, 10, "underline"), cursor="hand2")
         self.b_sol.bind("<Button-1>", lambda e: self.rec_actual and self._abrir_solicitud(self.rec_actual))
+        # Al fallar (o cancelar): reintentar con la misma solicitud y copiar lo necesario para reportar la falla
+        self.fila_fallo = ad.Flujo(card, C["card"], hueco=8)
+        self._boton(self.fila_fallo, "↻ Volver a intentar", self._reintentar, ancho=18).pack(side="left")
+        self._boton(self.fila_fallo, "Copiar solicitud", self._copiar_sol_fallo, primario=False,
+                    ancho=16).pack(side="left")
+        self._boton(self.fila_fallo, "Copiar datos para reportar", self._copiar_reporte_fallo, primario=False,
+                    ancho=24).pack(side="left")
+        self.l_copia = tk.Label(self.fila_fallo, text="", bg=C["card"], fg=C["ok"], font=(FONT, 9))
+        self.l_copia.pack(side="left")
         self._boton(pie, "Cancelar", self._cancelar, primario=False,
                     ancho=12).pack(side="right")
 
@@ -871,6 +880,39 @@ class App(tk.Tk):
                                relief="flat", font=("Consolas", 9), wrap="word")
         self.log_visible = False
         return f
+
+    def _mostrar_fallo(self, si):
+        if si:
+            self.l_copia.config(text="")
+            self.fila_fallo.pack(fill="x", padx=28, pady=(4, 6), before=self.cont_pasos)
+        else:
+            self.fila_fallo.pack_forget()
+
+    def _texto_sol_run(self):
+        return self.t_sol.get("1.0", "end").strip()
+
+    def _copiar_portapapeles(self, texto, aviso):
+        self.clipboard_clear()
+        self.clipboard_append(texto)
+        self.update()
+        self.l_copia.config(text=aviso)
+
+    def _copiar_sol_fallo(self):
+        t = self._texto_sol_run()
+        if t:
+            self._copiar_portapapeles(plt.extraer_solicitud(t) or t, "✔ Solicitud copiada")
+
+    def _copiar_reporte_fallo(self):
+        datos = plt.datos_reporte(self._texto_sol_run())
+        self._copiar_portapapeles(datos, "✔ Copiado: " + datos.replace("\n", " · "))
+
+    def _reintentar(self):
+        """Vuelve a lanzar la misma solicitud (el script quedo esperando la siguiente en el jump host)."""
+        if self.corriendo:
+            return
+        self._mostrar_fallo(False)
+        self._mostrar(self.v_form)
+        self.after(50, self._iniciar)
 
     def _toggle_log(self):
         self.log_visible = not self.log_visible
@@ -889,6 +931,7 @@ class App(tk.Tk):
         self.barra_objetivo = 0
         self.ask.pack_forget()
         self.b_sol.pack_forget()
+        self._mostrar_fallo(False)
         self.l_msg.config(fg=C["txt"])
         self._pill("En proceso", C["acc"])
         self.attributes("-topmost", True)
@@ -1011,6 +1054,7 @@ class App(tk.Tk):
                 self._toggle_log()
             rec = self._registrar("error", e.get("resultado") or {}, e.get("error") or "Error")
             self._ofrecer_solicitud(rec)
+            self._mostrar_fallo(True)
             self._mostrar(self.v_run)
 
         elif fase == "cancelado":
@@ -1021,6 +1065,7 @@ class App(tk.Tk):
             self._pill("Cancelado", C["warn"])
             rec = self._registrar("cancelado", e.get("resultado") or {}, "Cancelado por el operador")
             self._ofrecer_solicitud(rec)
+            self._mostrar_fallo(True)
 
     def _registrar(self, fase, resultado, mensaje):
         """Guarda el intento en el historial de solicitudes (si hay ID o cuenta RR)."""

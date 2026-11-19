@@ -369,6 +369,8 @@ def parsear_solicitud(texto: str) -> dict:
         "rr": _buscar(t, r"CUENTA RR\s*:?\s*(\d+)"),
         "ot": _buscar(t, r"OT/LLs RR:[ \t]*(\S+)"),
         "cliente": _buscar(t, r"NOMBRE CLIENTE:[ \t]*(.*)"),
+        "regional": _buscar(t, r"^[ \t]*REGIONAL:[ \t]*(.*)"),
+        "aliado": _buscar(t, r"^[ \t]*ALIADO:[ \t]*(.*)"),
         "serial_ont": _buscar(t, r"SERIAL ONT:[ \t]*(.*)"),
         "mac_ont": _buscar(t, r"MAC ONT:[ \t]*(\S*)"),
         "codigo": _buscar(t, r"C[ÓO]DIGO SERVICIO:[ \t]*(\S+)").upper(),
@@ -379,6 +381,30 @@ def parsear_solicitud(texto: str) -> dict:
         "id_reserva_onnet": _buscar(t, r"ID RESERVA ONNET:[ \t]*(\S+)"),
         "id_reserva_atp": _buscar(t, r"ID RESERVA ATP:[ \t]*(\S+)"),
     }
+
+
+def descripcion_cliente(nombre, rr):
+    """Nombre que el script le pone a la ONT/service-port: NOMBRE en mayusculas, sin tildes, espacios por '_' y la
+    cuenta RR al final. Ej.: 'Danner Arias', 1232131 -> 'DANNER_ARIAS_1232131'. '' si falta el nombre."""
+    import unicodedata
+    n = unicodedata.normalize("NFKD", str(nombre or "")).encode("ascii", "ignore").decode("ascii").strip().upper()
+    n = re.sub(r"_+", "_", re.sub(r"\s+", "_", n)).strip("_")
+    r = re.sub(r"\D", "", str(rr or "").split(".")[0])
+    if not n:
+        return ""
+    return "%s_%s" % (n, r) if r else n
+
+
+def con_bridge(descripcion):
+    """La descripcion para una cuenta con IP bridge."""
+    return "%s_BRIDGE" % descripcion if descripcion else ""
+
+
+def datos_reporte(texto_solicitud):
+    """Lo que se pide para reportar una falla, sacado de la solicitud:
+    RR: 64767642 / REGIONAL: Occidente / ALIADO: CONECTAR."""
+    s = parsear_solicitud(texto_solicitud or "")
+    return "RR: %s\nREGIONAL: %s\nALIADO: %s" % (s.get("rr") or "", s.get("regional") or "", s.get("aliado") or "")
 
 
 def parsear_acs(texto: str) -> dict:

@@ -88,3 +88,7 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Contingencia (`hac_zac/panel_emergencia.py`, pestaña «Contingencia», `PanelContingencia`): Guía de emergencia (`GUIA`, comandos iguales
   al script; prueba en test_ritmo_buscador) y Buscador de IPs por nodo (`hac_zac/buscador_ips.py`: lee el .xlsx sin
   openpyxl; índice sin datos de clientes en `<carpeta_equipo>/buscador_ips.json`; «Actualizar Excel…»).
+- Al fallar/cancelar (vista de proceso): «↻ Volver a intentar» (`_reintentar` relanza `_iniciar`), «Copiar solicitud» y
+  «Copiar datos para reportar» (`plantilla.datos_reporte`: RR / REGIONAL / ALIADO). En la plantilla también «Copiar datos
+  de reporte». Tarjeta «Para entrar a la ONT»: Cliente (`plantilla.descripcion_cliente` = NOMBRE_RR, igual que el script)
+  y «Con BRIDGE» (NOMBRE_RR_BRIDGE) si la cuenta lleva bridge.
