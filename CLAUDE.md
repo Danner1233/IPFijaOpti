@@ -92,3 +92,6 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   «Copiar datos para reportar» (`plantilla.datos_reporte`: RR / REGIONAL / ALIADO). En la plantilla también «Copiar datos
   de reporte». Tarjeta «Para entrar a la ONT»: Cliente (`plantilla.descripcion_cliente` = NOMBRE_RR, igual que el script)
   y «Con BRIDGE» (NOMBRE_RR_BRIDGE) si la cuenta lleva bridge.
+- Final que no se pierde: al volver a «esperando» el script manda `ultimo` (copia del fin/error/cancelado); la
+  ventana lo recupera con `final_perdido` si estaba ocupada y no vio el final (antes quedaba pegada en «Verificando y
+  cerrando»). `_poll` ya no se detiene si falla al mostrar (queda en hac_zac.log). Prueba: test_fin_perdido.

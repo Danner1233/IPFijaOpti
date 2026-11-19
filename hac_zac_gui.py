@@ -979,16 +979,30 @@ class App(tk.Tk):
 
     # ---------- estado ----------
     def _poll(self):
-        e = leer_json(os.path.join(self.carpeta, "estado.json"))
-        if e and e.get("seq", -1) != self.seq_visto:
-            self.seq_visto = e["seq"]
-            self._aplicar(e)
-        self.after(250, self._poll)
+        try:
+            e = leer_json(os.path.join(self.carpeta, "estado.json"))
+            if e and e.get("seq", -1) != self.seq_visto:
+                self.seq_visto = e["seq"]
+                self._aplicar(e)
+        except Exception:          # un error al mostrar NO debe dejar la ventana sin leer al script
+            import logging
+            logging.getLogger("hac_zac.gui").exception("error aplicando el estado del script")
+        finally:
+            self.after(250, self._poll)
 
     def _aplicar(self, e):
         fase = e.get("fase")
+        if fase in FINALES:
+            self.seq_final = e.get("seq")
+            self.run_vivo = False
         if fase == "esperando":
+            perdido = final_perdido(e, getattr(self, "run_vivo", False), getattr(self, "seq_final", None),
+                                    len(self.pasos_widgets))
+            if perdido:
+                self._aplicar(perdido)
             return
+        if fase in ("corriendo", "pregunta"):
+            self.run_vivo = True
         if not self.corriendo and fase in ("corriendo", "pregunta"):
             self.corriendo = True
             self._preparar_run("Iniciando...")
@@ -1122,6 +1136,25 @@ class App(tk.Tk):
         except Exception:
             pass
         self.destroy()
+
+
+FINALES = ("fin", "error", "cancelado")
+
+
+def final_perdido(e, run_vivo, seq_final, n_pasos=7):
+    """El script volvio a 'esperando' pero la ventana no vio el final (estaba ocupada mas de ~2 s).
+    Devuelve el evento final a aplicar (de 'ultimo') o None. Con un script viejo sin 'ultimo', un error
+    que avisa y libera la ventana para no quedar pegada en el ultimo paso."""
+    if not run_vivo or (e or {}).get("fase") != "esperando":
+        return None
+    u = e.get("ultimo")
+    if u and u.get("fase") in FINALES and u.get("seq") != seq_final:
+        return u
+    if "ultimo" not in e:
+        return {"fase": "error", "paso": n_pasos, "resultado": {}, "log": e.get("log") or [],
+                "error": "El script termino pero la ventana no recibio el resultado. "
+                         "Revise en SecureCRT si quedo configurado."}
+    return None
 
 
 # ----------------------------------------------------------------------

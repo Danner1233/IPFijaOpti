@@ -160,6 +160,9 @@ class Ui(object):
         self.error = None
         self.lineas = []
         self.n_pregunta = 0
+        # Ultimo final (fin / error / cancelado) que se sigue enviando mientras espera: si la interfaz estaba
+        # ocupada y no alcanzo a leerlo (dura ~2 s antes de pasar a 'esperando'), lo recupera de aqui.
+        self.ultimo = None
 
     def _ruta(self, nombre):
         return os.path.join(self.dir, nombre)
@@ -177,6 +180,7 @@ class Ui(object):
                 "pregunta": self.pregunta,
                 "resultado": self.resultado,
                 "error": self.error,
+                "ultimo": self.ultimo,
             })
         except Exception:
             pass
@@ -218,6 +222,7 @@ class Ui(object):
                         os.remove(ruta)      # consumida: la siguiente que aparezca es una solicitud nueva
                     except Exception:
                         pass
+                    self.ultimo = None       # empieza otra: el final anterior ya no aplica
                     return datos
             if not self.gui_viva():
                 return None
@@ -255,6 +260,13 @@ class Ui(object):
     def nuevo_ciclo(self):
         """Deja la interfaz lista para OTRA solicitud (sin cerrar el script ni la ventana)."""
         crt.Sleep(1500)      # que la interfaz alcance a mostrar el resultado anterior
+        if self.fase in ("fin", "error", "cancelado"):
+            self.ultimo = {
+                "seq": self.seq, "fase": self.fase, "paso": self.paso_actual, "pasos": self.PASOS,
+                "mensaje": self.mensaje, "log": self.lineas[-150:], "pregunta": None,
+                # copia: resultado es el mismo dict RES, que se vacia justo abajo
+                "resultado": dict(self.resultado) if self.resultado else None, "error": self.error,
+            }
         for nombre in ("cancelar.flag", "respuesta.json"):
             try:
                 if os.path.exists(self._ruta(nombre)):
