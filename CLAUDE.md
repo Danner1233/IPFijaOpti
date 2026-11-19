@@ -95,3 +95,7 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Final que no se pierde: al volver a «esperando» el script manda `ultimo` (copia del fin/error/cancelado); la
   ventana lo recupera con `final_perdido` si estaba ocupada y no vio el final (antes quedaba pegada en «Verificando y
   cerrando»). `_poll` ya no se detiene si falla al mostrar (queda en hac_zac.log). Prueba: test_fin_perdido.
+- Serial o MAC (`es_mac` del script = `tipo_valor` de la ventana): MAC solo si son 12 hexadecimales y sin prefijo de
+  serial (SCOM, ZTE, HWTC, FHTT, ALCL…); lo demás es serial. Solicitud compacta (`plantilla.compactar_solicitud` /
+  `extraer_solicitud`): sin blancos de sobra, dos tras el encabezado y uno antes de PROPIEDAD RED, SERVICIO SOBRE ATP,
+  CUENTA RR, ALIADO, CANTIDAD DE IPs y FECHA SOLICITUD; en la caja al pegar, en la plantilla y al copiar. Prueba: test_serial_formato.

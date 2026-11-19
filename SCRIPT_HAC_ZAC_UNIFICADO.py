@@ -1480,14 +1480,17 @@ def ruta_portal_script():
     return os.path.join(base, "portal_csr.py")
 
 
-# Prefijos de SERIAL. Todo lo que no empiece con alguno de estos se trata como MAC.
-SERIAL_PREFIJOS = ("ZTE", "SEI", "SDM", "SERC", "SKY", "HWTC")
+# Prefijos de SERIAL conocidos (siempre serial).
+SERIAL_PREFIJOS = ("ZTE", "SEI", "SDM", "SERC", "SKY", "HWTC", "SCOM", "FHTT", "ALCL", "CIGG", "GPON")
 
 
 def es_mac(texto):
-    """True si NO empieza con un prefijo de serial (entonces es MAC)."""
+    """True solo si es una MAC: 12 caracteres hexadecimales (con o sin ':' '-' '.') y sin prefijo de serial.
+    Lo demas es serial (ej. SCOMA0B03D18 lleva S, O, M: no es hexadecimal)."""
     t = texto.strip().upper()
-    return not t.startswith(SERIAL_PREFIJOS)
+    if t.startswith(SERIAL_PREFIJOS):
+        return False
+    return re.match(r"^[0-9A-F]{12}$", re.sub(r"[:.\-\s]", "", t)) is not None
 
 
 def solo_ascii(texto):

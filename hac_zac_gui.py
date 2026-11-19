@@ -17,6 +17,7 @@ Requiere Python 3 con tkinter (viene con el instalador de python.org).
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -42,7 +43,7 @@ if os.name == "nt":
         except Exception:
             pass
 
-SERIAL_PREFIJOS = ("ZTE", "SEI", "SDM", "SERC", "SKY", "HWTC")
+SERIAL_PREFIJOS = ("ZTE", "SEI", "SDM", "SERC", "SKY", "HWTC", "SCOM", "FHTT", "ALCL", "CIGG", "GPON")
 
 C = dict(   # Oscuro futurista (estilo Claude): negro calido, un acento terracota
     bg="#0d0d0c", card="#171716", card2="#212120", line="#302f2c",
@@ -76,7 +77,10 @@ def tipo_valor(texto):
     t = texto.strip().upper()
     if not t:
         return ""
-    return "SERIAL" if t.startswith(SERIAL_PREFIJOS) else "MAC"
+    # igual que es_mac() del script: MAC solo si son 12 hexadecimales y sin prefijo de serial
+    if t.startswith(SERIAL_PREFIJOS):
+        return "SERIAL"
+    return "MAC" if re.match(r"^[0-9A-F]{12}$", re.sub(r"[:.\-\s]", "", t)) else "SERIAL"
 
 
 # ----------------------------------------------------------------------
@@ -630,7 +634,7 @@ class App(tk.Tk):
         self._plantilla_guardada_o_preguntar(puede_cancelar=False)
         self._nueva_solicitud(preguntar=False)
         self.t_sol.insert("1.0", caso.get("txt_sol", ""))
-        self._leer_solicitud()
+        self._pegada()
         self._mostrar(self.v_form)
         if caso.get("auto"):
             self.after(900, self._iniciar)
@@ -706,8 +710,8 @@ class App(tk.Tk):
         self.t_sol.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         self.t_sol.bind("<KeyRelease>", lambda e: self._leer_solicitud())
         # pegar con el mouse (clic derecho / menú) no genera tecla: también se lee
-        self.t_sol.bind("<<Paste>>", lambda e: self.after(80, self._leer_solicitud))
-        self.t_sol.bind("<ButtonRelease-2>", lambda e: self.after(80, self._leer_solicitud))
+        self.t_sol.bind("<<Paste>>", lambda e: self.after(80, self._pegada))
+        self.t_sol.bind("<ButtonRelease-2>", lambda e: self.after(80, self._pegada))
         self.l_sol = tk.Label(inner, text="", bg=C["card"], fg=C["acc"], font=(FONT, 9), anchor="w")
         self.l_sol.grid(row=6, column=0, columnspan=2, sticky="w")
 
@@ -742,6 +746,19 @@ class App(tk.Tk):
             self.badge.config(text="MAC", fg=C["acc"])
         else:
             self.badge.config(text="  -  ", fg=C["mut"])
+
+    def _compactar_caja(self):
+        """Quita las lineas en blanco de sobra que trae Outlook (solo al pegar o al llegar de la cola)."""
+        crudo = self.t_sol.get("1.0", "end-1c")
+        nuevo = plt.compactar_solicitud(crudo).strip()
+        if nuevo != crudo.strip():
+            self.t_sol.delete("1.0", "end")
+            self.t_sol.insert("1.0", nuevo)
+
+    def _pegada(self):
+        if not plt.es_fila_sp(self.t_sol.get("1.0", "end")):
+            self._compactar_caja()
+        self._leer_solicitud()
 
     def _leer_solicitud(self):
         """Pegó la solicitud: de ahí salen MAC/serial, megas, bridge e ID (se actualiza si pega otra)."""

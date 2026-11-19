@@ -262,19 +262,50 @@ def _buscar(texto: str, patron: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+# Formato compacto de la solicitud (Outlook la trae con lineas en blanco de sobra): sin lineas vacias, salvo
+# DOS despues del encabezado y UNA antes de estos campos.
+_BLANCO_ANTES = re.compile(r"^(PROPIEDAD RED|SERVICIO SOBRE ATP|CUENTA RR|ALIADO|CANTIDAD DE IPS|FECHA SOLICITUD)\b",
+                           re.I)
+_INI_SOL = re.compile(r"^[ \t]*\+*[ \t]*SOLICITUD\s*ID\s*:", re.M | re.I)
+_FIN_SOL = re.compile(r"^[ \t]*FECHA SOLICITUD:[^\n]*", re.M | re.I)
+
+
+def _formatear_bloque(bloque: str) -> str:
+    lineas = [l.strip() for l in bloque.split("\n") if l.strip()]
+    out = []
+    for i, l in enumerate(lineas):
+        if i == 1:
+            out += ["", ""]
+        elif i > 1 and _BLANCO_ANTES.match(l):
+            out.append("")
+        out.append(l)
+    return "\n".join(out)
+
+
+def compactar_solicitud(texto: str) -> str:
+    """Deja el bloque '++++SOLICITUD ID…' … 'FECHA SOLICITUD:' en formato compacto; lo que lo rodea queda igual."""
+    t = _norm(texto)
+    ini = _INI_SOL.search(t)
+    if not ini:
+        return t
+    fin = _FIN_SOL.search(t, ini.start())
+    corte = fin.end() if fin else len(t)
+    return t[:ini.start()] + _formatear_bloque(t[ini.start():corte]) + t[corte:]
+
+
 def extraer_solicitud(texto: str) -> str:
-    """Devuelve solo la solicitud: desde '++++SOLICITUD ID: n++++' hasta la linea 'FECHA SOLICITUD:'.
+    """Devuelve solo la solicitud: desde '++++SOLICITUD ID: n++++' hasta la linea 'FECHA SOLICITUD:', compacta.
     Quita lo que rodea (encabezados del correo, 'DATOS DE CONFIGURACION', firmas, etc.).
     Si no encuentra el inicio, devuelve el texto tal cual (sin espacios sobrantes)."""
     t = _norm(texto)
-    ini = re.search(r"^[ \t]*\+*[ \t]*SOLICITUD\s*ID\s*:", t, re.M | re.I)
+    ini = _INI_SOL.search(t)
     if not ini:
         return t.strip()
     t = t[ini.start():]
-    fin = re.search(r"^[ \t]*FECHA SOLICITUD:[^\n]*", t, re.M | re.I)
+    fin = _FIN_SOL.search(t)
     if fin:
         t = t[:fin.end()]
-    return "\n".join(l.rstrip() for l in t.strip().split("\n"))
+    return _formatear_bloque(t)
 
 
 def es_fila_sp(texto: str) -> bool:
@@ -457,7 +488,7 @@ class DatosPlantilla:
 
 
 def _encabezado(d: DatosPlantilla) -> str:
-    t = _norm(d.solicitud).strip("\n")
+    t = compactar_solicitud(d.solicitud).strip("\n")
     if t.strip():
         corte = re.search(r"^\s*-{10,}\s*$|©©©©©\s+SWITCH", t, re.MULTILINE)   # por si pegaron la plantilla entera
         if corte:
