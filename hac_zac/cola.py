@@ -252,22 +252,6 @@ def pedir_liberar(id_, nombre):
     _escribir("cola.json", c)
 
 
-def por_aceptar(nombre, franja, ahora=None):
-    """Solicitudes que me llegaron en los ultimos minutos del turno y que aun no acepte (hay que preguntar)."""
-    from . import turnos
-    return [s for s in mis_casos(nombre) if s["estado"] == "asignada" and not s.get("aceptada") and
-            turnos.requiere_aceptar(s.get("recibida"), franja, ahora)]
-
-
-@bloqueado
-def marcar_aceptada(id_):
-    c = _cola()
-    for s in c["solicitudes"]:
-        if s["id"] == str(id_):
-            s["aceptada"] = _ahora()
-    _escribir("cola.json", c)
-
-
 def liberar_pendientes():
     return {i: v for i, v in _leer(LIBERAR, {}).items() if not v.get("ok") and v.get("intentos", 0) < MAX_INTENTOS_SP}
 

@@ -131,6 +131,4 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - SOLICITUDES (carpeta que creó el equipo en `reportes`): cada cierre también deja la plantilla en
   `reportes/SOLICITUDES/<11 Noviembre 2026>/<20>/<solicitud>_<RR> - <Resultado> - <PEM>.txt` (`carpeta_dia`); el mes
   nuevo se crea solo. `reportes.ordenar_existentes` copia las que ya había. `leer` ignora esa carpeta.
-- Fin de turno: corte `turnos.CORTE_MIN` = 1 min. En los últimos `PREGUNTAR_MIN` = 5 min cada solicitud que llega
-  pregunta «¿La acepta?» (`App._preguntar_aceptar`, `cola.por_aceptar`/`marcar_aceptada`); No → `cola.pedir_liberar`
-  (vuelve a SP y el admin no se la da otra vez). Procesar solo no arranca las no aceptadas. Prueba: test_aceptar_fin_turno.
+- Fin de turno: corte `turnos.CORTE_MIN` = 1 min (deja de recibir 1 min antes de salir).

@@ -513,21 +513,9 @@ class PanelCola(tk.Frame):
         todas = cola.solicitudes()
         if any(x["estado"] == "en_proceso" for x in todas):
             return
-        # al final del turno no arranca sola una que el PEM aun no acepto (la ventana se lo pregunta)
-        sin_responder = {x["id"] for x in self._por_aceptar()}
-        sig = next((x for x in todas if x["estado"] == "asignada" and x.get("plantilla") and
-                    x["id"] not in sin_responder), None)
+        sig = next((x for x in todas if x["estado"] == "asignada" and x.get("plantilla")), None)
         if sig:
             self.procesar(sig)
-
-    def _por_aceptar(self):
-        try:
-            from . import reparto_equipo
-            nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
-            carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
-            return cola.por_aceptar(nombre, reparto_equipo.franja_de(carpeta, nombre)) if nombre else []
-        except Exception:
-            return []
 
     def _caso(self):
         sel = self.t.selection()
@@ -545,8 +533,6 @@ class PanelCola(tk.Frame):
             messagebox.showinfo("Procesar", "Esta solicitud todavía no tiene la plantilla del correo.\n"
                                 "Verifique que el Lector de correo esté iniciado.")
             return
-        if s["id"] in {x["id"] for x in self._por_aceptar()}:
-            cola.marcar_aceptada(s["id"])           # la proceso a mano: la acepto
         self.procesar(s)
 
     def _terminar(self):

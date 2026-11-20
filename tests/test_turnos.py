@@ -71,12 +71,6 @@ class PruebasPlanConTurnos(unittest.TestCase):
                          "Ana en su ultimo minuto")
         self.assertEqual(R.plan([libre(1)], ROSTER, pres, a(LUNES, 19, 59)), [], "Beto en corte; Ana ya salio")
 
-    def test_ultimos_5_min_hay_que_aceptar(self):
-        self.assertFalse(T.requiere_aceptar(a(LUNES, 17, 24), "temprano", a(LUNES, 17, 26)))
-        self.assertTrue(T.requiere_aceptar(a(LUNES, 17, 25), "temprano", a(LUNES, 17, 26)))
-        self.assertTrue(T.requiere_aceptar(a(LUNES, 17, 28).isoformat(), "temprano", a(LUNES, 17, 28)))
-        self.assertFalse(T.requiere_aceptar(a(LUNES, 17, 25), "", a(LUNES, 17, 26)), "sin franja no pregunta")
-
 
 class Base(unittest.TestCase):
     def setUp(self):
