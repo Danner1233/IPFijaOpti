@@ -55,6 +55,8 @@ class _Servicios(tk.Frame):
     def _alternar(self, clave):
         pr = self.procesos[clave]
         if pr.vivo():
+            if not confirmar_detener(self, pr.nombre):
+                return
             pr.detener()
             return
         args = self.extra_args(clave)
@@ -118,6 +120,21 @@ class _Servicios(tk.Frame):
         return True
 
 
+AVISO_DETENER = ("¿Seguro que quiere detener %s?\n\n"
+                 "Si lo detiene:\n"
+                 "  •  NO le llegan solicitudes nuevas de SharePoint.\n"
+                 "  •  NO se copian las plantillas del correo.\n"
+                 "  •  Si es administrador, se DETIENE EL REPARTO del equipo.\n\n"
+                 "Lo normal es dejarlo encendido todo el turno.\n\n"
+                 "¿Detenerlo de todas formas?")
+
+
+def confirmar_detener(padre, que="el flujo"):
+    """Antes de apagar el flujo (o un lector): advertencia; por defecto queda en «No»."""
+    return messagebox.askyesno("Detener el flujo", AVISO_DETENER % (que if que == "el flujo" else "el " + que),
+                               icon="warning", default="no", parent=padre.winfo_toplevel())
+
+
 def _titulo(padre, texto, ayuda):
     tk.Label(padre, text=texto, bg=P.C["bg"], fg=P.C["txt"], font=(P.SERIF, 17, "bold")).pack(anchor="w")
     a = tk.Label(padre, text=ayuda, bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 10), justify="left")
@@ -129,9 +146,10 @@ def _titulo(padre, texto, ayuda):
 class PanelCola(tk.Frame):
     COLS = ("Solicitud", "Cuenta RR", "Cliente", "Estado", "Plantilla", "SharePoint", "Correo", "Demora", "Tiempo")
 
-    def __init__(self, padre, servicio, procesar):
+    def __init__(self, padre, servicio, procesar, desde_script=False):
         super().__init__(padre, bg=P.C["bg"])
         self.sv, self.procesar = servicio, procesar
+        self.desde_script = bool(desde_script)
         from . import central_cliente
         self.central = central_cliente.configurado(servicio.ajustes)
         if self.central:
@@ -160,11 +178,15 @@ class PanelCola(tk.Frame):
                        command=self._guardar_auto, bg=P.C["card"], fg=P.C["acc"], activebackground=P.C["card"],
                        selectcolor=P.C["bg"], font=(P.FONT, 10, "bold"), bd=0,
                        highlightthickness=0).pack(side="left", padx=(12, 0))
-        self.al_abrir = tk.BooleanVar(value=bool(servicio.ajustes.get("flujo_al_abrir", False)))
-        tk.Checkbutton(self.serv.opciones, text="Iniciar el flujo al abrir", variable=self.al_abrir,
-                       command=self._guardar_auto, bg=P.C["card"], fg=P.C["mut"], activebackground=P.C["card"],
-                       selectcolor=P.C["bg"], font=(P.FONT, 10), bd=0,
-                       highlightthickness=0).pack(side="left", padx=(12, 0))
+        self.al_abrir = tk.BooleanVar(value=bool(desde_script or servicio.ajustes.get("flujo_al_abrir", False)))
+        cb = tk.Checkbutton(self.serv.opciones, text="Iniciar el flujo al abrir" + (" (siempre, desde el script)"
+                                                                                   if desde_script else ""),
+                            variable=self.al_abrir, command=self._guardar_auto, bg=P.C["card"], fg=P.C["mut"],
+                            activebackground=P.C["card"], selectcolor=P.C["bg"], font=(P.FONT, 10), bd=0,
+                            highlightthickness=0)
+        if desde_script:                           # fijo: no se puede cambiar
+            cb.config(state="disabled", disabledforeground=P.C["mut"])
+        cb.pack(side="left", padx=(12, 0))
         tk.Label(self.serv.opciones, text="Ver navegador:", bg=P.C["card"], fg=P.C["mut"],
                  font=(P.FONT, 10)).pack(side="left", padx=(14, 2))
         self.ver = {}
@@ -401,8 +423,10 @@ class PanelCola(tk.Frame):
         self.lbl_conteo.config(text="📋 " + cola.texto_conteo(c), fg=color)
 
     def _flujo(self):
-        """Un solo boton: abre/cierra el lector de SharePoint y el de correo a la vez."""
+        """Un solo boton: abre/cierra el lector de SharePoint y el de correo a la vez. Detener pregunta antes."""
         if self.serv.hay_vivos():
+            if not confirmar_detener(self):
+                return
             self.serv.detener_todo()
         else:
             self.serv.iniciar_todo(self.serv.var_ver.get())
@@ -415,15 +439,19 @@ class PanelCola(tk.Frame):
                             bg=P.C["card2"] if vivo else P.C["acc"], fg=P.C["txt"] if vivo else P.C["on_acc"])
 
     def iniciar_al_abrir(self):
+        """Abierta desde el script: el flujo arranca SIEMPRE (no se puede apagar esa opcion). Desde el centro de
+        control, segun la casilla «Iniciar el flujo al abrir»."""
         if self.central:                           # el servidor central lee SharePoint y el correo
             return
-        if self.al_abrir.get() and not self.serv.hay_vivos():
+        if (self.desde_script or self.al_abrir.get()) and not self.serv.hay_vivos():
             self.serv.iniciar_todo(False)
+            self._pintar_flujo()
 
     def _guardar_auto(self):
         from hac_zac.servicio import guardar_ajustes
         self.sv.ajustes["auto_procesar"] = bool(self.auto_proc.get())
-        self.sv.ajustes["flujo_al_abrir"] = bool(self.al_abrir.get())
+        if not self.desde_script:                  # desde el script es fijo: no se guarda
+            self.sv.ajustes["flujo_al_abrir"] = bool(self.al_abrir.get())
         for k, v in self.ver.items():
             self.sv.ajustes["ver_" + k] = bool(v.get())
         guardar_ajustes(self.sv.ajustes)

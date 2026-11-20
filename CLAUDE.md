@@ -116,3 +116,6 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Conteo de la cola: el lector de SP deja `sp_conteo.json` en cada vuelta (`cola.guardar_conteo`); la pestaña Cola lo
   muestra cada 3 s (`texto_conteo`: sin asignar, la más vieja, en proceso). Presencia: una fila por PEM (la más
   reciente) y cada app borra sus copias en conflicto de OneDrive (`presencia.limpiar_copias`). Prueba: test_cola_presencia.
+- Abierta desde el script (`PanelCola(desde_script=True)`): el flujo arranca siempre al abrir; la casilla queda fija.
+  Detener el flujo o un lector pide confirmación con aviso (`panel_centro.confirmar_detener`, por defecto «No»).
+  Prueba: test_flujo_automatico.

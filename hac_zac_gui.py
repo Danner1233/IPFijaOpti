@@ -177,7 +177,9 @@ class App(tk.Tk):
         self.v_ips = panel.PanelIPs(self.cont, self.sv)
         self.v_aj = panel.PanelAjustes(self.cont, self.sv)
         self.v_aj.al_modo = self._cambio_modo
-        self.v_cola = panel_centro.PanelCola(self.cont, self.sv, self._procesar_caso)
+        # abierta desde el script de SecureCRT: el flujo arranca siempre al abrir (opcion fija)
+        self.v_cola = panel_centro.PanelCola(self.cont, self.sv, self._procesar_caso,
+                                             desde_script=not centro and not demo)
         self.v_cola.ocupado = lambda: self.corriendo
         self.v_admin = panel_centro.PanelAdmin(self.cont, self.sv)
         self.v_reportes = panel_centro.PanelReportes(self.cont, self.sv)
