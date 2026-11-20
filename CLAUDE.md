@@ -125,8 +125,8 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   → «NO SE PUDO SACAR DATOS DEL CLIENTE MAC O SERIAL NO ENCONTRADA»; encuentra la ONT sin datos del cliente →
   «ONT MAL APROVISIONADA, no se cuenta con los datos al cliente»; ambos + RR / REGIONAL / ALIADO (`falla_acs` en el
   script, `plantilla.reporte_falla`/`motivo_acs` en la ventana: título en grande y «Copiar datos para reportar»).
-- Plantillas por resultado: al cerrar, `reportes.guardar_plantilla` deja la plantilla en
-  `reportes/<PEM>/<Exitosas|No exitosas|Escalamiento>/<AAAA-MM>/<solicitud>_<RR>.txt` (se mueve si cambia el resultado).
+- Plantillas cerradas: SOLO en `reportes/SOLICITUDES` (ya no hay carpetas Exitosas/No exitosas/Escalamiento por PEM;
+  `ordenar_existentes` mueve las de antes y quita esas carpetas).
   Prueba: test_acs_carpetas.
 - SOLICITUDES (carpeta que creó el equipo en `reportes`): cada cierre también deja la plantilla en
   `reportes/SOLICITUDES/<11 Noviembre 2026>/<20>/<solicitud>_<RR> - <Resultado> - <PEM>.txt` (`carpeta_dia`); el mes

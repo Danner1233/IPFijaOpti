@@ -76,25 +76,31 @@ class PruebasCarpetasPorResultado(unittest.TestCase):
         self.rec = {"id": "65164", "rr": "2637758", "resultado": "Exitosa", "preview": "PLANTILLA\nIP: 1.2.3.4\n",
                     "documentada_en": "2026-11-20T10:00:00"}
 
-    def ruta(self, sub):
-        return os.path.join(self.c, "reportes", "Danner Arias", sub, "2026-11", "65164_2637758.txt")
-
-    def test_exitosa(self):
+    def test_una_sola_carpeta(self):
         r = reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
-        self.assertEqual(r, self.ruta("Exitosas"))
-        with open(r, encoding="utf-8-sig") as f:
-            self.assertEqual(f.read(), "PLANTILLA\nIP: 1.2.3.4\n")
+        self.assertEqual(r, self.dia("65164_2637758 - Exitosa - Danner Arias.txt"))
+        self.assertEqual(os.listdir(os.path.join(self.c, "reportes")), ["SOLICITUDES"],
+                         "ya no se crean carpetas por PEM con Exitosas / No exitosas / Escalamiento")
 
     def test_no_exitosa_y_escalamiento(self):
-        for est, sub in (("No exitosa", "No exitosas"), ("Escalamiento", "Escalamiento")):
-            rec = dict(self.rec, resultado=est, documentada_en="", cerrada_en="2026-11-20T11:00:00")
-            self.assertEqual(reportes.guardar_plantilla(self.c, "Danner Arias", rec), self.ruta(sub))
+        for est in ("No exitosa", "Escalamiento"):
+            rec = dict(self.rec, id="1" + est[0], resultado=est, documentada_en="", cerrada_en="2026-11-20T11:00:00")
+            r = reportes.guardar_plantilla(self.c, "Danner Arias", rec)
+            self.assertEqual(os.path.dirname(r), self.dia())
+            self.assertIn(" - %s - " % est, r)
 
-    def test_si_cambia_el_resultado_se_mueve(self):
+    def test_mueve_las_carpetas_por_pem_de_antes(self):
+        viejo = os.path.join(self.c, "reportes", "Danner Arias", "Exitosas", "2026-11")
+        os.makedirs(viejo)
+        with open(os.path.join(viejo, "65000_1.txt"), "w", encoding="utf-8") as f:
+            f.write("X")
+        t = datetime(2026, 11, 20, 9, 0).timestamp()
+        os.utime(os.path.join(viejo, "65000_1.txt"), (t, t))
         reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
-        reportes.guardar_plantilla(self.c, "Danner Arias", dict(self.rec, resultado="No exitosa"))
-        self.assertFalse(os.path.exists(self.ruta("Exitosas")))
-        self.assertTrue(os.path.exists(self.ruta("No exitosas")))
+        self.assertEqual(sorted(os.listdir(self.dia())), ["65000_1 - Exitosa - Danner Arias.txt",
+                                                          "65164_2637758 - Exitosa - Danner Arias.txt"])
+        self.assertFalse(os.path.exists(os.path.join(self.c, "reportes", "Danner Arias", "Exitosas")),
+                         "la carpeta vieja se quita")
 
     def test_sin_resultado_o_sin_carpeta_no_guarda(self):
         self.assertIsNone(reportes.guardar_plantilla(self.c, "Danner Arias", dict(self.rec, resultado="")))

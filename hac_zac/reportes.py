@@ -247,8 +247,8 @@ def registrar_solicitud(carpeta_equipo, nombre, rec, sol_cola=None, ahora=None):
     return registro
 
 
-# ---------------------------------------------------------------------------------------------- plantillas por resultado
-# reportes/<PEM>/<Exitosas|No exitosas|Escalamiento>/<AAAA-MM>/<solicitud>_<RR>.txt
+# ---------------------------------------------------------------------------------------------- plantillas cerradas
+# Resultados que se guardan (y las carpetas por PEM de la version anterior, que ordenar_existentes vacia)
 CARPETA_RESULTADO = {"Exitosa": "Exitosas", "No exitosa": "No exitosas", "Escalamiento": "Escalamiento"}
 
 
@@ -286,8 +286,9 @@ def _guardar_en_dia(carpeta_equipo, nombre, rec, est, texto, cuando):
 
 
 def ordenar_existentes(carpeta_equipo):
-    """Pasa a SOLICITUDES/<mes>/<dia> las plantillas que ya estaban en las carpetas de resultado de cada PEM (usa
-    la fecha del archivo). No repite las que ya estan. Devuelve cuantas copio."""
+    """Las plantillas que habian quedado en las carpetas de resultado de cada PEM (<PEM>/Exitosas|No exitosas|
+    Escalamiento, version anterior) se MUEVEN a SOLICITUDES/<mes>/<dia> (con la fecha del archivo) y esas carpetas
+    se quitan si quedan vacias. Asi todo queda en una sola carpeta. Devuelve cuantas movio."""
     import shutil
     base = carpeta(carpeta_equipo)
     n = 0
@@ -299,46 +300,47 @@ def ordenar_existentes(carpeta_equipo):
     for pem in pems:
         for sub, est in inverso.items():
             raiz = os.path.join(base, pem, sub)
+            if not os.path.isdir(raiz):
+                continue
             for actual, _dirs, archivos in os.walk(raiz):
                 for f in archivos:
                     if not f.endswith(".txt"):
                         continue
                     origen = os.path.join(actual, f)
-                    dia = carpeta_dia(carpeta_equipo, datetime.fromtimestamp(os.path.getmtime(origen)))
-                    destino = os.path.join(dia, "%s - %s - %s.txt" % (os.path.splitext(f)[0], est, pem))
-                    if os.path.exists(destino):
+                    try:
+                        dia = carpeta_dia(carpeta_equipo, datetime.fromtimestamp(os.path.getmtime(origen)))
+                        destino = os.path.join(dia, "%s - %s - %s.txt" % (os.path.splitext(f)[0], est, pem))
+                        os.makedirs(dia, exist_ok=True)
+                        if os.path.exists(destino):
+                            os.remove(origen)            # ya estaba copiada
+                        else:
+                            shutil.move(origen, destino)
+                            n += 1
+                    except OSError:
                         continue
-                    os.makedirs(dia, exist_ok=True)
-                    shutil.copy2(origen, destino)
-                    n += 1
+            for actual, _dirs, _f in sorted(os.walk(raiz), key=lambda x: -len(x[0])):
+                try:
+                    os.rmdir(actual)                     # solo si quedo vacia
+                except OSError:
+                    pass
     return n
 
 
 def guardar_plantilla(carpeta_equipo, nombre, rec, ahora=None):
-    """Al cerrar la solicitud, su plantilla queda en la carpeta del PEM segun el resultado y en
-    SOLICITUDES/<mes>/<dia> (todas las del equipo). Si despues se cambia el resultado, se mueve.
-    Devuelve la ruta (la de la carpeta del PEM) o None."""
+    """Al cerrar la solicitud, su plantilla queda en UNA sola carpeta para todo el equipo:
+    SOLICITUDES/<mes>/<dia>/<solicitud>_<RR> - <Resultado> - <PEM>.txt. Si despues se cambia el resultado, se
+    reemplaza. Devuelve la ruta o None."""
     from . import estados
     est = estados.normalizar((rec or {}).get("resultado") or "")
-    sub = CARPETA_RESULTADO.get(est)
     texto = str((rec or {}).get("preview") or "")
-    if not (carpeta_equipo and nombre and sub and texto.strip()):
+    if not (carpeta_equipo and nombre and est in CARPETA_RESULTADO and texto.strip()):
         return None
     cuando = _dt(rec.get("documentada_en") or rec.get("cerrada_en") or "") or ahora or datetime.now()
-    archivo_txt = _nombre_archivo(rec)
-    base = os.path.join(carpeta(carpeta_equipo), carpeta_pem(nombre))
-    mes = cuando.strftime("%Y-%m")
-    for otra in CARPETA_RESULTADO.values():
-        if otra != sub:
-            vieja = os.path.join(base, otra, mes, archivo_txt)
-            if os.path.isfile(vieja):
-                os.remove(vieja)
-    destino = os.path.join(base, sub, mes, archivo_txt)
-    os.makedirs(os.path.dirname(destino), exist_ok=True)
-    with open(destino, "w", encoding="utf-8-sig", newline="\r\n") as f:
-        f.write(texto.replace("\r\n", "\n"))
-    _guardar_en_dia(carpeta_equipo, nombre, rec, est, texto, cuando)
-    return destino
+    try:
+        ordenar_existentes(carpeta_equipo)        # lo de la version anterior (carpetas por PEM) pasa a SOLICITUDES
+    except OSError:
+        pass
+    return _guardar_en_dia(carpeta_equipo, nombre, rec, est, texto, cuando)
 
 
 # ---------------------------------------------------------------------------------------------- leer / resumen
