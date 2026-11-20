@@ -418,6 +418,53 @@ def es_libre(it):
     return not es_apoyo(it.get("ActivApoyo"))
 
 
+# ------------------------------------------------------------------------------ cuantas hay en cola (SharePoint)
+CONTEO = "sp_conteo.json"
+CONTEO_VIGENTE_S = 60          # si el lector no actualiza en 1 min, el dato ya no se muestra como actual
+
+
+def guardar_conteo(items, ahora=None):
+    """El lector de SharePoint deja en cada vuelta (cada ~6 s) cuantas hay sin asignar y cuantas en proceso."""
+    ahora = ahora or datetime.now()
+    libres = [it for it in items if es_libre(it)]
+    en_proceso = sum(1 for it in items if str(desde_sp(it).get("pem") or "").strip() and
+                     _plano(desde_sp(it).get("est_seg")) not in ESTADOS_FINALES and not es_apoyo(it.get("ActivApoyo")))
+    creadas = [t for t in (_a_local(it.get("Created")) for it in libres) if t]
+    d = {"libres": len(libres), "en_proceso": en_proceso, "hora": ahora.isoformat(timespec="seconds"),
+         "mas_vieja": min(creadas).isoformat(timespec="seconds") if creadas else ""}
+    _escribir(CONTEO, d)
+    return d
+
+
+def conteo(ahora=None):
+    """El ultimo conteo con 'hace_s' (segundos desde la vuelta del lector), o None si no hay o ya es viejo."""
+    ahora = ahora or datetime.now()
+    d = _leer(CONTEO, {})
+    try:
+        hace = (ahora - datetime.fromisoformat(d["hora"])).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        return None
+    if hace > CONTEO_VIGENTE_S:
+        return None
+    return dict(d, hace_s=max(0, int(hace)))
+
+
+def texto_conteo(c, ahora=None):
+    """'3 en cola sin asignar (la más vieja hace 12 min) · 4 en proceso · actualizado hace 5 s'."""
+    if not c:
+        return "En cola: sin dato (inicie el flujo para ver cuántas hay)"
+    ahora = ahora or datetime.now()
+    n = c.get("libres", 0)
+    t = ("%d en cola sin asignar" % n) if n else "Cola vacía: ninguna sin asignar"
+    try:
+        vieja = datetime.fromisoformat(c["mas_vieja"]) if c.get("mas_vieja") else None
+    except ValueError:
+        vieja = None
+    if n and vieja:
+        t += " (la más vieja hace %d min)" % max(0, int((ahora - vieja).total_seconds() // 60))
+    return t + " · %d en proceso · actualizado hace %d s" % (c.get("en_proceso", 0), c.get("hace_s", 0))
+
+
 def es_apoyo(v):
     """Columna 'Activ Apoyo': SharePoint puede mandarla como texto ('No'/'Si'), como Si/No (true/false) o vacia."""
     if isinstance(v, bool):

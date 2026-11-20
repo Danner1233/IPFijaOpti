@@ -474,6 +474,10 @@ def main():
                         if tomada:
                             TOMADAS.add(str(tomada))
                             items = leer_items(d)
+                try:                                      # cuantas hay en cola (la pestana Cola lo muestra)
+                    cola.guardar_conteo(items)
+                except Exception:
+                    _LOG.warning("no se pudo guardar el conteo de la cola", exc_info=True)
                 n = procesar(items, nombre)
                 print(time.strftime("%H:%M:%S"), "mis solicitudes nuevas:", n)
             except Exception as e:

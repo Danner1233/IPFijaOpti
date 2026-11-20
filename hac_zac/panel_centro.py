@@ -147,6 +147,11 @@ class PanelCola(tk.Frame):
                                "▶  Iniciar flujo (SharePoint + correo)", self._flujo, True, 34)
         if not self.central:                       # con central: SharePoint y correo los atiende el servidor
             self.b_flujo.pack(anchor="w", pady=(0, 8))
+            # Cuantas hay en cola en SharePoint (lo deja el lector en cada vuelta, ~6 s; se pinta cada 3 s)
+            self.lbl_conteo = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 12, "bold"),
+                                       anchor="w", justify="left")
+            self.lbl_conteo.pack(fill="x", pady=(0, 8))
+            P.ad.envolver(self.lbl_conteo)
         filas =((("correo", "Lector de correo", "correo_lector.py"),) if self.central else
                  (("sp", "Lector de SharePoint", "sp_lector.py"), ("correo", "Lector de correo", "correo_lector.py")))
         self.serv = _Servicios(self, filas, servicio, self._args)
@@ -384,7 +389,16 @@ class PanelCola(tk.Frame):
         self._auto_procesar()
         self._pintar_chat()
         self._pintar_flujo()
+        self._pintar_conteo()
         self._tarea = self.after(3000, self.refrescar)
+
+    def _pintar_conteo(self):
+        if not hasattr(self, "lbl_conteo"):
+            return
+        c = cola.conteo()
+        n = (c or {}).get("libres", 0)
+        color = P.C["mut"] if not c else (P.C["err"] if n >= 5 else (P.C["warn"] if n else P.C["ok"]))
+        self.lbl_conteo.config(text="📋 " + cola.texto_conteo(c), fg=color)
 
     def _flujo(self):
         """Un solo boton: abre/cierra el lector de SharePoint y el de correo a la vez."""

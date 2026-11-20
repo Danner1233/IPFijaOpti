@@ -41,6 +41,37 @@ def archivo(carpeta_equipo, nombre):
     return os.path.join(carpeta(carpeta_equipo), seguro + ".json")
 
 
+def _plano(t):
+    import unicodedata
+    return " ".join(unicodedata.normalize("NFKD", str(t or "")).encode("ascii", "ignore").decode().lower().split())
+
+
+def limpiar_copias(carpeta_equipo, nombre):
+    """OneDrive crea COPIAS EN CONFLICTO del archivo ('Juan Gutierrez-DESKTOP-XXXX.json', 'Juan Gutierrez (1).json')
+    cuando dos PC lo tocan a la vez. Quedan viejas y el PEM salia dos veces (una 'desconectado'). Cada PEM borra
+    las suyas al publicar. Devuelve cuantas borro."""
+    principal = archivo(carpeta_equipo, nombre)
+    base = os.path.splitext(os.path.basename(principal))[0]
+    n = 0
+    try:
+        nombres = os.listdir(carpeta(carpeta_equipo))
+    except OSError:
+        return 0
+    for f in nombres:
+        stem, ext = os.path.splitext(f)
+        if ext.lower() != ".json" or stem == base or not stem.startswith(base) or stem[len(base):][:1] not in "-_ (":
+            continue
+        ruta = os.path.join(carpeta(carpeta_equipo), f)
+        if _plano(_leer(ruta).get("nombre")) != _plano(nombre):
+            continue
+        try:
+            os.remove(ruta)
+            n += 1
+        except OSError:
+            pass
+    return n
+
+
 def estado_propio(ultima_actividad, ocupado, ahora):
     if ocupado or (ultima_actividad and (ahora - ultima_actividad).total_seconds() < AUSENTE_S):
         return "en_linea"
@@ -153,6 +184,7 @@ def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, paus
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(reg, f, ensure_ascii=False, indent=1)
     os.replace(tmp, ruta)
+    limpiar_copias(carpeta_equipo, nombre)
     return reg
 
 
@@ -186,8 +218,14 @@ def equipo(carpeta_equipo, ahora=None):
                     "actualizado": r.get("actualizado") or "",
                     "en_linea_hoy_min": int((r.get("en_linea_hoy_s") or 0) / 60) if hoy else 0,
                     "pausa": pausa, "caso": r.get("caso") or "", "extra": extra})
+    # Una fila por persona: si hay copias en conflicto de OneDrive, vale la MAS RECIENTE.
+    unico = {}
+    for x in out:
+        k = _plano(x["nombre"])
+        if k not in unico or (x["actualizado"] or "") > (unico[k]["actualizado"] or ""):
+            unico[k] = x
     orden = {"en_linea": 0, "pausa": 1, "ausente": 2, "desconectado": 3}
-    return sorted(out, key=lambda x: (orden.get(x["estado"], 3), x["nombre"].lower()))
+    return sorted(unico.values(), key=lambda x: (orden.get(x["estado"], 3), x["nombre"].lower()))
 
 
 def hace(iso, ahora=None):

@@ -38,6 +38,7 @@ sp_liberar.json
 pausa.json
 extra.json
 turno_hoy.json
+sp_conteo.json
 conexion.json
 reportes_pendientes.json
 reportes/
