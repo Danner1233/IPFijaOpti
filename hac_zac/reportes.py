@@ -258,9 +258,66 @@ def _nombre_archivo(rec):
     return re.sub(r"[^\w\-]", "_", base) + ".txt"
 
 
+# Todas las solicitudes del equipo por mes y dia (carpeta que creo el equipo en reportes):
+# reportes/SOLICITUDES/<11 Noviembre 2026>/<20>/<solicitud>_<RR> - <Resultado> - <PEM>.txt
+SOLICITUDES = "SOLICITUDES"
+MESES = ("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre",
+         "Noviembre", "Diciembre")
+
+
+def carpeta_dia(carpeta_equipo, cuando):
+    """reportes/SOLICITUDES/11 Noviembre 2026/20 (el numero adelante: Windows las ordena bien)."""
+    mes = "%02d %s %d" % (cuando.month, MESES[cuando.month - 1], cuando.year)
+    return os.path.join(carpeta(carpeta_equipo), SOLICITUDES, mes, "%02d" % cuando.day)
+
+
+def _guardar_en_dia(carpeta_equipo, nombre, rec, est, texto, cuando):
+    base = os.path.splitext(_nombre_archivo(rec))[0]
+    dia = carpeta_dia(carpeta_equipo, cuando)
+    os.makedirs(dia, exist_ok=True)
+    pem = carpeta_pem(nombre)
+    for f in os.listdir(dia):                       # si cambio el resultado, queda solo el nuevo
+        if f.startswith(base + " - ") and f.endswith(" - %s.txt" % pem):
+            os.remove(os.path.join(dia, f))
+    destino = os.path.join(dia, "%s - %s - %s.txt" % (base, est, pem))
+    with open(destino, "w", encoding="utf-8-sig", newline="\r\n") as f:
+        f.write(texto.replace("\r\n", "\n"))
+    return destino
+
+
+def ordenar_existentes(carpeta_equipo):
+    """Pasa a SOLICITUDES/<mes>/<dia> las plantillas que ya estaban en las carpetas de resultado de cada PEM (usa
+    la fecha del archivo). No repite las que ya estan. Devuelve cuantas copio."""
+    import shutil
+    base = carpeta(carpeta_equipo)
+    n = 0
+    try:
+        pems = [p for p in os.listdir(base) if p != SOLICITUDES and os.path.isdir(os.path.join(base, p))]
+    except OSError:
+        return 0
+    inverso = {v: k for k, v in CARPETA_RESULTADO.items()}
+    for pem in pems:
+        for sub, est in inverso.items():
+            raiz = os.path.join(base, pem, sub)
+            for actual, _dirs, archivos in os.walk(raiz):
+                for f in archivos:
+                    if not f.endswith(".txt"):
+                        continue
+                    origen = os.path.join(actual, f)
+                    dia = carpeta_dia(carpeta_equipo, datetime.fromtimestamp(os.path.getmtime(origen)))
+                    destino = os.path.join(dia, "%s - %s - %s.txt" % (os.path.splitext(f)[0], est, pem))
+                    if os.path.exists(destino):
+                        continue
+                    os.makedirs(dia, exist_ok=True)
+                    shutil.copy2(origen, destino)
+                    n += 1
+    return n
+
+
 def guardar_plantilla(carpeta_equipo, nombre, rec, ahora=None):
-    """Al cerrar la solicitud, su plantilla queda en la carpeta del PEM segun el resultado. Si despues se cambia
-    el resultado, se mueve (se borra de la otra carpeta). Devuelve la ruta o None."""
+    """Al cerrar la solicitud, su plantilla queda en la carpeta del PEM segun el resultado y en
+    SOLICITUDES/<mes>/<dia> (todas las del equipo). Si despues se cambia el resultado, se mueve.
+    Devuelve la ruta (la de la carpeta del PEM) o None."""
     from . import estados
     est = estados.normalizar((rec or {}).get("resultado") or "")
     sub = CARPETA_RESULTADO.get(est)
@@ -280,6 +337,7 @@ def guardar_plantilla(carpeta_equipo, nombre, rec, ahora=None):
     os.makedirs(os.path.dirname(destino), exist_ok=True)
     with open(destino, "w", encoding="utf-8-sig", newline="\r\n") as f:
         f.write(texto.replace("\r\n", "\n"))
+    _guardar_en_dia(carpeta_equipo, nombre, rec, est, texto, cuando)
     return destino
 
 
@@ -290,7 +348,7 @@ def leer(carpeta_equipo, tipo, mes):
     base = carpeta(carpeta_equipo)
     migrar(carpeta_equipo)
     try:
-        pems = sorted(n for n in os.listdir(base) if os.path.isdir(os.path.join(base, n)))
+        pems = sorted(n for n in os.listdir(base) if n != SOLICITUDES and os.path.isdir(os.path.join(base, n)))
     except OSError:
         return out
     for pem in pems:

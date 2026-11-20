@@ -100,6 +100,44 @@ class PruebasCarpetasPorResultado(unittest.TestCase):
         self.assertIsNone(reportes.guardar_plantilla(self.c, "Danner Arias", dict(self.rec, resultado="")))
         self.assertIsNone(reportes.guardar_plantilla("", "Danner Arias", self.rec))
 
+    def dia(self, *f):
+        return os.path.join(self.c, "reportes", "SOLICITUDES", "11 Noviembre 2026", "20", *f)
+
+    def test_solicitudes_por_mes_y_dia(self):
+        reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
+        self.assertEqual(os.listdir(self.dia()), ["65164_2637758 - Exitosa - Danner Arias.txt"])
+        with open(self.dia("65164_2637758 - Exitosa - Danner Arias.txt"), encoding="utf-8-sig") as f:
+            self.assertEqual(f.read(), "PLANTILLA\nIP: 1.2.3.4\n")
+
+    def test_diciembre_crea_su_carpeta(self):
+        reportes.guardar_plantilla(self.c, "Danner Arias", dict(self.rec, documentada_en="2026-12-01T08:30:00"))
+        self.assertTrue(os.path.isfile(os.path.join(self.c, "reportes", "SOLICITUDES", "12 Diciembre 2026", "01",
+                                                    "65164_2637758 - Exitosa - Danner Arias.txt")))
+
+    def test_cambio_de_resultado_en_el_dia(self):
+        reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
+        reportes.guardar_plantilla(self.c, "Danner Arias", dict(self.rec, resultado="Escalamiento"))
+        self.assertEqual(os.listdir(self.dia()), ["65164_2637758 - Escalamiento - Danner Arias.txt"])
+
+    def test_varios_pem_el_mismo_dia(self):
+        reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
+        reportes.guardar_plantilla(self.c, "Juan Gutierrez", dict(self.rec, id="65170", rr="111"))
+        self.assertEqual(sorted(os.listdir(self.dia())), ["65164_2637758 - Exitosa - Danner Arias.txt",
+                                                          "65170_111 - Exitosa - Juan Gutierrez.txt"])
+
+    def test_ordenar_las_que_ya_habia(self):
+        viejo = os.path.join(self.c, "reportes", "Juan Gutierrez", "No exitosas", "2026-11")
+        os.makedirs(viejo)
+        ruta = os.path.join(viejo, "65001_9.txt")
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write("X")
+        t = datetime(2026, 11, 19, 15, 0).timestamp()
+        os.utime(ruta, (t, t))
+        self.assertEqual(reportes.ordenar_existentes(self.c), 1)
+        self.assertTrue(os.path.isfile(os.path.join(self.c, "reportes", "SOLICITUDES", "11 Noviembre 2026", "19",
+                                                    "65001_9 - No exitosa - Juan Gutierrez.txt")))
+        self.assertEqual(reportes.ordenar_existentes(self.c), 0, "no repite")
+
     def test_no_confunde_los_reportes(self):
         reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
         self.assertEqual(reportes.leer(self.c, "solicitudes", datetime(2026, 11, 20)), [])

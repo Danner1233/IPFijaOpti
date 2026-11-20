@@ -128,3 +128,6 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Plantillas por resultado: al cerrar, `reportes.guardar_plantilla` deja la plantilla en
   `reportes/<PEM>/<Exitosas|No exitosas|Escalamiento>/<AAAA-MM>/<solicitud>_<RR>.txt` (se mueve si cambia el resultado).
   Prueba: test_acs_carpetas.
+- SOLICITUDES (carpeta que creó el equipo en `reportes`): cada cierre también deja la plantilla en
+  `reportes/SOLICITUDES/<11 Noviembre 2026>/<20>/<solicitud>_<RR> - <Resultado> - <PEM>.txt` (`carpeta_dia`); el mes
+  nuevo se crea solo. `reportes.ordenar_existentes` copia las que ya había. `leer` ignora esa carpeta.
