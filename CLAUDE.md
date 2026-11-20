@@ -119,3 +119,5 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Abierta desde el script (`PanelCola(desde_script=True)`): el flujo arranca siempre al abrir; la casilla queda fija.
   Detener el flujo o un lector pide confirmación con aviso (`panel_centro.confirmar_detener`, por defecto «No»).
   Prueba: test_flujo_automatico.
+- «↻ Reiniciar flujo» (`PanelCola._reiniciar`, visible con el flujo encendido): apaga y reabre los lectores en 3 s, sin
+  la alerta de Detener; al cambiar «Ver navegador» con el flujo encendido ofrece reiniciar (`_cambio_ver`).

@@ -161,10 +161,15 @@ class PanelCola(tk.Frame):
             _titulo(self, "Mis solicitudes", "Los lectores traen las solicitudes que se le asignan a su nombre y copian "
                     "su plantilla del correo. Cuando una tiene plantilla, pulse Procesar: se abre SecureCRT y el script "
                     "arranca solo.")
-        self.b_flujo = P.BOTON(self, "▶  Iniciar flujo (correo)" if self.central else
+        self._fila_flujo = P.ad.Flujo(self, P.C["bg"], hueco=8)
+        self.b_flujo = P.BOTON(self._fila_flujo, "▶  Iniciar flujo (correo)" if self.central else
                                "▶  Iniciar flujo (SharePoint + correo)", self._flujo, True, 34)
+        self.b_flujo.pack(side="left")
+        # Reiniciar: apaga y vuelve a abrir los lectores (p. ej. para que se apliquen las opciones del navegador)
+        self.b_reiniciar = P.BOTON(self._fila_flujo, "↻  Reiniciar flujo", self._reiniciar, False, 18)
+        self._reiniciando = False
         if not self.central:                       # con central: SharePoint y correo los atiende el servidor
-            self.b_flujo.pack(anchor="w", pady=(0, 8))
+            self._fila_flujo.pack(fill="x", pady=(0, 8))
             # Cuantas hay en cola en SharePoint (lo deja el lector en cada vuelta, ~6 s; se pinta cada 3 s)
             self.lbl_conteo = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 12, "bold"),
                                        anchor="w", justify="left")
@@ -193,7 +198,7 @@ class PanelCola(tk.Frame):
         for clave, nombre in (("sp", "SharePoint"), ("correo", "Correo"), ("portal", "Portal")):
             v = tk.BooleanVar(value=bool(servicio.ajustes.get("ver_" + clave, True)))
             self.ver[clave] = v
-            tk.Checkbutton(self.serv.opciones, text=nombre, variable=v, command=self._guardar_auto,
+            tk.Checkbutton(self.serv.opciones, text=nombre, variable=v, command=self._cambio_ver,
                            bg=P.C["card"], fg=P.C["txt"], activebackground=P.C["card"], selectcolor=P.C["bg"],
                            font=(P.FONT, 10), bd=0, highlightthickness=0).pack(side="left", padx=(6, 0))
         self.serv.pack(fill="x")
@@ -424,6 +429,8 @@ class PanelCola(tk.Frame):
 
     def _flujo(self):
         """Un solo boton: abre/cierra el lector de SharePoint y el de correo a la vez. Detener pregunta antes."""
+        if getattr(self, "_reiniciando", False):
+            return
         if self.serv.hay_vivos():
             if not confirmar_detener(self):
                 return
@@ -435,8 +442,40 @@ class PanelCola(tk.Frame):
     def _pintar_flujo(self):
         vivo = self.serv.hay_vivos()
         inicio = "▶  Iniciar flujo (correo)" if getattr(self, "central", False) else "▶  Iniciar flujo (SharePoint + correo)"
-        self.b_flujo.config(text="■  Detener flujo" if vivo else inicio,
-                            bg=P.C["card2"] if vivo else P.C["acc"], fg=P.C["txt"] if vivo else P.C["on_acc"])
+        if getattr(self, "_reiniciando", False):
+            self.b_flujo.config(text="↻  Reiniciando…", bg=P.C["card2"], fg=P.C["mut"])
+        else:
+            self.b_flujo.config(text="■  Detener flujo" if vivo else inicio,
+                                bg=P.C["card2"] if vivo else P.C["acc"], fg=P.C["txt"] if vivo else P.C["on_acc"])
+        b = getattr(self, "b_reiniciar", None)
+        if b is not None:
+            if vivo and not self._reiniciando:
+                if not b.winfo_manager():
+                    b.pack(side="left")
+            elif b.winfo_manager():
+                b.pack_forget()
+
+    REINICIO_S = 3              # pausa entre apagar y volver a abrir (que Chrome termine de cerrarse)
+
+    def _reiniciar(self, preguntar=True):
+        """Apaga y vuelve a abrir los lectores. No usa la alerta de Detener: el flujo vuelve solo en segundos."""
+        if self._reiniciando or not self.serv.hay_vivos():
+            return
+        if preguntar and not messagebox.askyesno(
+                "Reiniciar flujo", "Se cierran y se vuelven a abrir los lectores de SharePoint y correo (unos "
+                "%d s). Sirve para aplicar las opciones del navegador.\n\n¿Reiniciar ahora?" % (self.REINICIO_S + 6),
+                parent=self.winfo_toplevel()):
+            return
+        self._reiniciando = True
+        self.serv.detener_todo()
+        self._pintar_flujo()
+
+        def volver():
+            self._reiniciando = False
+            if not self.serv.hay_vivos():
+                self.serv.iniciar_todo(self.serv.var_ver.get())
+            self._pintar_flujo()
+        self.after(self.REINICIO_S * 1000, volver)
 
     def iniciar_al_abrir(self):
         """Abierta desde el script: el flujo arranca SIEMPRE (no se puede apagar esa opcion). Desde el centro de
@@ -446,6 +485,14 @@ class PanelCola(tk.Frame):
         if (self.desde_script or self.al_abrir.get()) and not self.serv.hay_vivos():
             self.serv.iniciar_todo(False)
             self._pintar_flujo()
+
+    def _cambio_ver(self):
+        """Cambio «Ver navegador»: se guarda y, si el flujo esta encendido, ofrece reiniciarlo para aplicarlo ya."""
+        self._guardar_auto()
+        if self.serv.hay_vivos() and not self._reiniciando and messagebox.askyesno(
+                "Ver navegador", "Para aplicar el cambio del navegador conviene reiniciar el flujo (unos %d s).\n\n"
+                "¿Reiniciarlo ahora?" % (self.REINICIO_S + 6), parent=self.winfo_toplevel()):
+            self._reiniciar(preguntar=False)
 
     def _guardar_auto(self):
         from hac_zac.servicio import guardar_ajustes

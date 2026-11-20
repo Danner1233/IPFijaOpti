@@ -81,5 +81,49 @@ class PruebasDetener(unittest.TestCase):
         self.assertEqual(c.serv.inicios, 1)
 
 
+def cola_reinicio(vivos=True):
+    c = cola_falsa(True, vivos=vivos)
+    c.serv.var_ver = types.SimpleNamespace(get=lambda: False)
+    c._reiniciando = False
+    c.REINICIO_S = PC.PanelCola.REINICIO_S
+    c.pendiente = []
+    c.after = lambda ms, f: c.pendiente.append((ms, f))
+    c.reiniciar = c._reiniciar = lambda preguntar=True: PC.PanelCola._reiniciar(c, preguntar)
+    c._guardar_auto = lambda: None
+    c.cambio_ver = lambda: PC.PanelCola._cambio_ver(c)
+    return c
+
+
+class PruebasReiniciar(unittest.TestCase):
+    def test_apaga_y_vuelve_a_abrir_sin_la_alerta_de_detener(self):
+        c = cola_reinicio()
+        with mock.patch.object(PC.messagebox, "askyesno", return_value=True) as p:
+            c.reiniciar()
+        self.assertNotIn("NO le llegan", p.call_args.args[1], "no es la alerta de detener")
+        self.assertEqual((c.serv.paradas, c.serv.inicios, c._reiniciando), (1, 0, True))
+        ms, volver = c.pendiente[0]
+        self.assertEqual(ms, 3000)
+        volver()
+        self.assertEqual((c.serv.inicios, c._reiniciando), (1, False))
+
+    def test_si_cancela_no_toca_nada(self):
+        c = cola_reinicio()
+        with mock.patch.object(PC.messagebox, "askyesno", return_value=False):
+            c.reiniciar()
+        self.assertEqual((c.serv.paradas, c.pendiente), (0, []))
+
+    def test_con_el_flujo_apagado_no_hace_nada(self):
+        c = cola_reinicio(vivos=False)
+        c.reiniciar(preguntar=False)
+        self.assertEqual(c.serv.paradas, 0)
+
+    def test_cambiar_ver_navegador_ofrece_reiniciar(self):
+        c = cola_reinicio()
+        with mock.patch.object(PC.messagebox, "askyesno", return_value=True) as p:
+            c.cambio_ver()
+        self.assertEqual(p.call_count, 1, "pregunta una sola vez")
+        self.assertEqual(c.serv.paradas, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
