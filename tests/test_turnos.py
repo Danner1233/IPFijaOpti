@@ -35,11 +35,11 @@ class PruebasHorarios(unittest.TestCase):
     def test_situacion_y_corte(self):
         self.assertEqual(T.situacion("temprano", a(LUNES, 7, 59)), "antes")
         self.assertEqual(T.situacion("temprano", a(LUNES, 8, 0)), "en_turno")
-        self.assertEqual(T.situacion("temprano", a(LUNES, 16, 59)), "en_turno")
-        self.assertEqual(T.situacion("temprano", a(LUNES, 17, 0)), "corte", "30 min antes de las 17:30")
+        self.assertEqual(T.situacion("temprano", a(LUNES, 17, 28)), "en_turno", "a 2 min de salir aun recibe")
+        self.assertEqual(T.situacion("temprano", a(LUNES, 17, 29)), "corte", "1 min antes de las 17:30")
         self.assertEqual(T.situacion("temprano", a(LUNES, 17, 30)), "fuera")
-        self.assertEqual(T.situacion("tarde", a(VIERNES, 19, 29)), "en_turno")
-        self.assertEqual(T.situacion("tarde", a(VIERNES, 19, 30)), "corte")
+        self.assertEqual(T.situacion("tarde", a(VIERNES, 19, 58)), "en_turno")
+        self.assertEqual(T.situacion("tarde", a(VIERNES, 19, 59)), "corte")
         self.assertEqual(T.situacion("medio", a(DOMINGO, 12)), "fuera")
         self.assertEqual(T.situacion("", a(DOMINGO, 3)), "sin_franja", "sin franja no hay restriccion")
         self.assertTrue(T.puede_recibir("", a(DOMINGO, 3)))
@@ -65,9 +65,17 @@ class PruebasPlanConTurnos(unittest.TestCase):
     def test_solo_recibe_quien_esta_en_turno(self):
         pres = {"ana": "en_linea", "beto": "en_linea"}
         self.assertEqual([n for _, n in R.plan([libre(1), libre(2)], ROSTER, pres, a(LUNES, 9))], ["Ana"])
-        self.assertEqual([n for _, n in R.plan([libre(1), libre(2)], ROSTER, pres, a(LUNES, 17, 10))], ["Beto"],
-                         "Ana ya esta en su corte de 30 min")
-        self.assertEqual(R.plan([libre(1)], ROSTER, pres, a(LUNES, 19, 45)), [], "Beto en corte; Ana ya salio")
+        self.assertEqual(sorted(n for _, n in R.plan([libre(1), libre(2)], ROSTER, pres, a(LUNES, 17, 10))),
+                         ["Ana", "Beto"], "a las 17:10 Ana aun recibe (corte de 1 min)")
+        self.assertEqual([n for _, n in R.plan([libre(1), libre(2)], ROSTER, pres, a(LUNES, 17, 29))], ["Beto"],
+                         "Ana en su ultimo minuto")
+        self.assertEqual(R.plan([libre(1)], ROSTER, pres, a(LUNES, 19, 59)), [], "Beto en corte; Ana ya salio")
+
+    def test_ultimos_5_min_hay_que_aceptar(self):
+        self.assertFalse(T.requiere_aceptar(a(LUNES, 17, 24), "temprano", a(LUNES, 17, 26)))
+        self.assertTrue(T.requiere_aceptar(a(LUNES, 17, 25), "temprano", a(LUNES, 17, 26)))
+        self.assertTrue(T.requiere_aceptar(a(LUNES, 17, 28).isoformat(), "temprano", a(LUNES, 17, 28)))
+        self.assertFalse(T.requiere_aceptar(a(LUNES, 17, 25), "", a(LUNES, 17, 26)), "sin franja no pregunta")
 
 
 class Base(unittest.TestCase):

@@ -513,9 +513,21 @@ class PanelCola(tk.Frame):
         todas = cola.solicitudes()
         if any(x["estado"] == "en_proceso" for x in todas):
             return
-        sig = next((x for x in todas if x["estado"] == "asignada" and x.get("plantilla")), None)
+        # al final del turno no arranca sola una que el PEM aun no acepto (la ventana se lo pregunta)
+        sin_responder = {x["id"] for x in self._por_aceptar()}
+        sig = next((x for x in todas if x["estado"] == "asignada" and x.get("plantilla") and
+                    x["id"] not in sin_responder), None)
         if sig:
             self.procesar(sig)
+
+    def _por_aceptar(self):
+        try:
+            from . import reparto_equipo
+            nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
+            carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+            return cola.por_aceptar(nombre, reparto_equipo.franja_de(carpeta, nombre)) if nombre else []
+        except Exception:
+            return []
 
     def _caso(self):
         sel = self.t.selection()
@@ -533,6 +545,8 @@ class PanelCola(tk.Frame):
             messagebox.showinfo("Procesar", "Esta solicitud todavía no tiene la plantilla del correo.\n"
                                 "Verifique que el Lector de correo esté iniciado.")
             return
+        if s["id"] in {x["id"] for x in self._por_aceptar()}:
+            cola.marcar_aceptada(s["id"])           # la proceso a mano: la acepto
         self.procesar(s)
 
     def _terminar(self):
@@ -637,7 +651,7 @@ class PanelAdmin(tk.Frame):
         self.sv = servicio
         _titulo(self, "Administrador", "Agregue a cada PEM con su nombre EXACTO de PEM_ASIGNADO, actívelo y póngale su "
                 "franja de la semana (Temprano A/B, Medio C/D, Tarde E/F; el sábado usa B, D y F). Recibe la solicitud "
-                "libre más antigua el PEM activo, EN TURNO, usando la app y sin ninguna abierta; deja de recibir 30 min "
+                "libre más antigua el PEM activo, EN TURNO, usando la app y sin ninguna abierta; deja de recibir 1 min "
                 "antes de su salida. Con varios admin reparte uno y, si se detiene, otro lo toma solo.")
         top = P.ad.Flujo(self, P.C["bg"])
         top.pack(fill="x")

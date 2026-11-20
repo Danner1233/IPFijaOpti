@@ -248,7 +248,7 @@ ETIQUETA = {"en_linea": "● Activo", "ausente": "◐ Ausente", "desconectado": 
 
 def situacion(estado, caso="", pausa=None, turno=None, extra=None):
     """Lo que se muestra del PEM en Equipo/Admin: (clave, texto).
-    en_proceso / disponible (activo con o sin solicitud), cierre (ultimos 30 min del turno: ya no recibe),
+    en_proceso / disponible (activo con o sin solicitud), cierre (ultimo minuto del turno: ya no recibe),
     extra (horas extra voluntarias: recibe), fuera_turno, pausa, ausente, desconectado.
     `turno` = turnos.situacion(franja) o None. Si termino su turno con una abierta, la termina (no es hora extra)."""
     if estado == "desconectado":

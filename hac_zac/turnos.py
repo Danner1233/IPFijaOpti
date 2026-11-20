@@ -9,7 +9,8 @@ horario de cada dia:
     (domingo no hay turno)
 
 * Solo recibe solicitudes quien esta EN TURNO.
-* CORTE: CORTE_MIN antes de salir ya no recibe (para no quedar con una a medias; neutras tienen 30 min).
+* CORTE: CORTE_MIN (1 min) antes de salir ya no recibe. En los ultimos PREGUNTAR_MIN (5 min), cada solicitud
+  que le llegue le pregunta si la acepta (si no, se devuelve a SharePoint para otro PEM).
 * Sin franja: no hay restriccion de horario (como antes).
 Logica pura, sin archivos.
 """
@@ -19,7 +20,8 @@ TURNOS = {"A": ("08:00", "17:30"), "B": ("08:00", "17:00"), "C": ("09:30", "19:0
           "D": ("10:00", "19:00"), "E": ("10:30", "20:00"), "F": ("11:00", "20:00")}
 FRANJAS = {"temprano": ("A", "B"), "medio": ("C", "D"), "tarde": ("E", "F")}   # (lun-jue, vie-sab)
 NOMBRE_FRANJA = {"temprano": "Temprano", "medio": "Medio", "tarde": "Tarde", "": "Sin franja"}
-CORTE_MIN = 30        # deja de recibir 30 min antes de su salida
+CORTE_MIN = 1         # deja de recibir 1 min antes de su salida
+PREGUNTAR_MIN = 5     # en los ultimos 5 min, cada solicitud que le llegue pregunta si la acepta
 AVISO_MIN = 10        # 10 min antes de salir se avisa si tiene una solicitud abierta
 
 
@@ -78,6 +80,21 @@ def puede_recibir(franja, ahora=None):
 
 def fuera_de_turno(franja, ahora=None):
     return situacion(franja, ahora) in ("antes", "fuera")
+
+
+def requiere_aceptar(recibida, franja, ahora=None, minutos=PREGUNTAR_MIN):
+    """La solicitud llego en los ultimos `minutos` del turno: hay que preguntar al PEM si la acepta.
+    `recibida` = datetime (o texto ISO) en que llego a su cola."""
+    ahora = ahora or datetime.now()
+    if isinstance(recibida, str):
+        try:
+            recibida = datetime.fromisoformat(recibida)
+        except ValueError:
+            return False
+    h = horario(franja, ahora)
+    if not h or not recibida:
+        return False
+    return h[1] - timedelta(minutes=minutos) <= recibida < h[1] + timedelta(minutes=minutos)
 
 
 def aviso_salida(franja, ahora=None, aviso_min=AVISO_MIN):

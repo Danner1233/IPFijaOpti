@@ -78,7 +78,7 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   (`cola.auto_asignar_configurado()` es False). PIN de admin fijo (`reparto_equipo.PIN_ADMIN`, solo la huella).
   Equipo/Admin muestran `presencia.situacion`: En proceso (con la solicitud), Disponible, En pausa, Ausente, Desconectado.
 - Turnos (`hac_zac/turnos.py`): franja semanal por PEM (temprano A/B, medio C/D, tarde E/F; sábado = B/D/F; domingo
-  sin turno); solo recibe en turno, corte 30 min antes de salir, aviso 10 min antes si tiene una abierta.
+  sin turno); solo recibe en turno, corte 1 min antes de salir, aviso 10 min antes si tiene una abierta.
   Lista de PEM compartida en `<carpeta_equipo>/roster.json` (`reparto_equipo.roster/agregar/poner_franja`).
   Varios admin: reparte uno (`debo_repartir`, LIDER_S 90 s) y otro lo toma si se detiene; respaldo de PEM en turno
   tras RESPALDO_MIN 5 min sin admin (`respaldo_activo`, ajuste `admin_respaldo`). Reasignar desde Admin
@@ -131,3 +131,6 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - SOLICITUDES (carpeta que creó el equipo en `reportes`): cada cierre también deja la plantilla en
   `reportes/SOLICITUDES/<11 Noviembre 2026>/<20>/<solicitud>_<RR> - <Resultado> - <PEM>.txt` (`carpeta_dia`); el mes
   nuevo se crea solo. `reportes.ordenar_existentes` copia las que ya había. `leer` ignora esa carpeta.
+- Fin de turno: corte `turnos.CORTE_MIN` = 1 min. En los últimos `PREGUNTAR_MIN` = 5 min cada solicitud que llega
+  pregunta «¿La acepta?» (`App._preguntar_aceptar`, `cola.por_aceptar`/`marcar_aceptada`); No → `cola.pedir_liberar`
+  (vuelve a SP y el admin no se la da otra vez). Procesar solo no arranca las no aceptadas. Prueba: test_aceptar_fin_turno.

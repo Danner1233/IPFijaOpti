@@ -309,6 +309,42 @@ class App(tk.Tk):
             "la quitan. Su turno se cierra cuando la termine y ya no recibe solicitudes nuevas." % (fin, caso),
             parent=self))
 
+    def _preguntar_aceptar(self, nombre, franja, ahora):
+        """Ultimos 5 min del turno: por cada solicitud que le llegue, pregunta si la acepta. Si no, se devuelve a
+        SharePoint (Sin Asignar, con la nota de que la libero) y el admin no se la vuelve a dar."""
+        from hac_zac import turnos
+        if getattr(self, "_preguntando", False) or self.corriendo:
+            return
+        pend = cola.por_aceptar(nombre, franja, ahora)
+        if not pend:
+            return
+        s = pend[0]
+        fin = turnos.horario(franja, ahora)[1].strftime("%H:%M")
+
+        def preguntar():
+            self._preguntando = True
+            try:
+                self.deiconify()
+                self.lift()
+                ok = messagebox.askyesno(
+                    "¿Acepta la solicitud?", "Le llegó la solicitud %s y su turno termina a las %s.\n\n"
+                    "¿La acepta?\n\nSí: la trabaja (la termina con calma).\nNo: se devuelve a SharePoint para "
+                    "que el admin se la asigne a otro PEM." % (s["id"], fin), icon="question", parent=self)
+            finally:
+                self._preguntando = False
+            if ok:
+                cola.marcar_aceptada(s["id"])
+            else:
+                cola.pedir_liberar(s["id"], nombre)
+                messagebox.showinfo("Solicitud devuelta", "La solicitud %s se devuelve a SharePoint (Sin Asignar) "
+                                    "en la próxima vuelta del lector." % s["id"], parent=self)
+            try:
+                self.v_cola.refrescar()
+            except Exception:
+                pass
+        self._preguntando = True
+        self.after(10, preguntar)
+
     def _alternar_extra(self):
         """Horas extra voluntarias: empezar (motivo + tiempo; mientras duren puede recibir) o terminarlas."""
         from hac_zac import horas_extra, reparto_equipo
@@ -393,6 +429,8 @@ class App(tk.Tk):
                 if turnos.texto(franja, ahora):
                     texto += "  ·  " + turnos.texto(franja, ahora)
                 self._avisar_salida(franja, caso, ahora)
+                if not extra:
+                    self._preguntar_aceptar(nombre, franja, ahora)
             if extra and not pausa and horas_extra.texto(extra) not in texto:
                 texto += "  ·  " + horas_extra.texto(extra)
             self.lbl_estado.config(text=texto, fg=color)

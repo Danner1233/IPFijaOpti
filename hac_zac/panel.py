@@ -1054,7 +1054,7 @@ class DialogoInicio(tk.Toplevel):
                      anchor="w").pack(fill="x")
         tk.Label(caja, text="¿Qué turno va a manejar hoy?", bg=C["bg"], fg=C["txt"], font=(FONT, 11, "bold"),
                  anchor="w").pack(fill="x", pady=(4, 0))
-        tk.Label(caja, text="Solo recibe solicitudes en su turno; 30 min antes de salir deja de recibir.",
+        tk.Label(caja, text="Solo recibe solicitudes en su turno; 1 min antes de salir deja de recibir y en los últimos 5 min le pregunta si acepta cada una.",
                  bg=C["bg"], fg=C["mut"], font=(FONT, 9), anchor="w", justify="left",
                  wraplength=ad.px(440)).pack(fill="x", pady=(2, 6))
         self.lb_turno = _lista(caja, [t for _, t in self.turnos], len(self.turnos))

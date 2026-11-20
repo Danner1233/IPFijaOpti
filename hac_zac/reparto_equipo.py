@@ -7,7 +7,7 @@
 * Turno: el que lleva mas tiempo sin recibir. Se reparte la libre mas antigua.
 * No se le devuelve una solicitud a quien la libero (queda la nota "libero la solicitud" en Observaciones).
 
-* Turnos: solo recibe quien esta EN TURNO (turnos.py: franja de la semana; corte 30 min antes de salir).
+* Turnos: solo recibe quien esta EN TURNO (turnos.py: franja de la semana; corte 1 min antes de salir).
 
 Archivos en <carpeta del equipo>:
 * roster.json  : la lista de PEM (activo, franja, ultimo) COMPARTIDA entre los admin (asi cualquiera puede repartir).
