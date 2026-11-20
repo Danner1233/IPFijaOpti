@@ -102,9 +102,14 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
 - Navegador oculto (Ajustes «Ver navegador» apagado): fuera de pantalla y sin botón en la barra de tareas
   (`navegador.barra_de_tareas`: WS_EX_TOOLWINDOW por Win32/ctypes); vuelve solo al iniciar sesión. Probado con Chrome real.
 - Al abrir (`App._preguntar_inicio`, `panel.DialogoInicio`): 1a vez el nombre de `reparto_equipo.EQUIPO` (+ roster);
-  cada día (lun-sáb) el turno A-F por lista (`turnos.lista_turnos`) → franja en roster (`poner_mi_turno`, ajuste
-  `turno_dia`). Clic en el estado del encabezado = cambiar turno.
+  una vez por día (lun-sáb) el turno A-F por lista (`turnos.lista_turnos`) → franja en roster (`poner_mi_turno`);
+  lo elegido queda en `turno_hoy.json` (`reparto_equipo.turno_elegido_hoy`) aunque cierre la app. Clic en el estado del encabezado = cambiar turno.
 - Fin de turno con una abierta: la termina (ya no es «huérfana» en Admin salvo desconectado); el tiempo tras la salida
   es hora extra. `hac_zac/horas_extra.py` (extra.json): «Terminando solicitud» automática y «Voluntaria» (botón
   «⏱ Horas extra» fuera de turno, `DialogoExtra`; recibe hasta 15 min antes; `reparto_equipo.extras_por_nombre`).
   Reporte `horas_extra_<mes>_<PEM>.csv`; Reportes muestra horas extra del día y del mes. Prueba: test_turnos_extra.
+- Horas extra: SOLO las voluntarias. Terminar una solicitud después del turno se permite pero NO cuenta.
+- Observaciones en SP: solo la observación del PEM (sin fecha/PEM/estado/causa; `sp_lector.cambios_estado`).
+  Sin botón «Liberar» en la Cola. Pausas de 15/30/60 min.
+- Reportes: `reportes/<PEM>/<AAAA-MM>/Solicitudes|Pausas|Conexion|Horas extra.csv`; los archivos sueltos de antes
+  se mueven solos (`reportes.migrar`, al leer).

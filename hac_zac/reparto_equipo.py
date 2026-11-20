@@ -268,6 +268,26 @@ def poner_mi_turno(carpeta_equipo, nombre, letra):
     return franja
 
 
+# El turno elegido HOY queda en su propio archivo local (turno_hoy.json): se pregunta una sola vez por dia aunque
+# se cierre la app, y no se pierde si otra ventana guarda los Ajustes.
+TURNO_HOY = "turno_hoy.json"
+
+
+def turno_elegido_hoy(nombre, ahora=None):
+    """Letra elegida hoy por `nombre` o ''."""
+    d = cola._leer(TURNO_HOY, {})
+    hoy = (ahora or datetime.now()).date().isoformat()
+    if isinstance(d, dict) and d.get("fecha") == hoy and mismo(d.get("nombre"), nombre):
+        return d.get("letra") or ""
+    return ""
+
+
+def guardar_turno_hoy(nombre, letra, ahora=None):
+    cola._escribir(TURNO_HOY, {"fecha": (ahora or datetime.now()).date().isoformat(), "nombre": nombre,
+                               "letra": str(letra or "").upper(),
+                               "elegido": (ahora or datetime.now()).isoformat(timespec="seconds")})
+
+
 def franja_de(carpeta_equipo, nombre):
     """Franja de un PEM segun la lista compartida (o la ultima publicada)."""
     for p in roster(carpeta_equipo) or leer(carpeta_equipo).get("pems") or []:

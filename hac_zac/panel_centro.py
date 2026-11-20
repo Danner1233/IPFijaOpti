@@ -175,7 +175,6 @@ class PanelCola(tk.Frame):
         P.BOTON(b, "Procesar", self._procesar, True, 11).pack(side="left")
         P.BOTON(b, "Marcar terminada", self._terminar, False, 16).pack(side="left", padx=6)
         P.BOTON(b, "Quitar de la cola", self._quitar, False, 15).pack(side="left")
-        P.BOTON(b, "Liberar (Sin Asignar)", self._liberar, False, 20).pack(side="left", padx=6)
         m, self.t = P._tabla(self, self.COLS, (80, 95, 200, 95, 75, 120, 120, 80, 95), alto=7)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("excedida", foreground=P.C["err"])
@@ -453,31 +452,6 @@ class PanelCola(tk.Frame):
             cola.cambiar_estado(s["id"], "terminada")
             self.refrescar()
 
-    def _liberar(self):
-        """Devuelve la solicitud: en SharePoint queda sin PEM y en "Sin Asignar" para que otro la tome.
-        El lector no la vuelve a tomar para mi en las proximas horas."""
-        s = self._caso()
-        if not s:
-            return
-        if s["estado"] not in cola.ABIERTOS:
-            messagebox.showinfo("Liberar", "Solo se puede liberar una solicitud abierta (asignada o en proceso).")
-            return
-        if getattr(self, "ocupado", None) and self.ocupado() and s["estado"] == "en_proceso":
-            messagebox.showinfo("Liberar", "Hay un proceso corriendo con esta solicitud. Espere a que termine o "
-                                "cancélelo.")
-            return
-        nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
-        if not nombre:
-            messagebox.showinfo("Liberar", "Escriba su nombre (como en SharePoint) en Ajustes.")
-            return
-        if not messagebox.askyesno("Liberar solicitud", "La solicitud %s se devolverá: en SharePoint quedará sin "
-                                   "PEM y en «Sin Asignar» para que otro PEM la tome.\n\n¿Continuar?" % s["id"]):
-            return
-        cola.pedir_liberar(s["id"], nombre)
-        self.refrescar()
-        messagebox.showinfo("Liberar", "Listo. El lector de SharePoint la liberará en su próxima vuelta "
-                            "(el flujo debe estar iniciado).")
-
     def _quitar(self):
         s = self._caso()
         if s and messagebox.askyesno("Quitar", "¿Quitar la solicitud %s de la cola? (No toca SharePoint)" % s["id"]):
@@ -501,7 +475,7 @@ class PanelEquipo(tk.Frame):
         _titulo(self, "Equipo", "Quién está trabajando (estado automático, nadie lo cambia a mano). "
                 "En proceso: tiene una solicitud abierta (se ve cuál). Disponible: usa la app y no tiene ninguna. "
                 "En pausa: se puso en pausa (almuerzo, reunión...) y no recibe solicitudes. Ausente: la app abierta "
-                "pero 5 minutos sin usarla. Fuera de turno: no es su horario (el turno que eligió al abrir). Horas extra: terminando una solicitud después de su turno, o voluntarias (recibe). "
+                "pero 5 minutos sin usarla. Fuera de turno: no es su horario (el turno que eligió al abrir). Horas extra: las que el PEM pidió con «⏱ Horas extra» (recibe solicitudes). "
                 "Desconectado: cerró la aplicación o su PC no sincroniza.")
         m, self.t = P._tabla(self, self.COLS, (220, 300, 160, 130, 100), alto=10)
         m.pack(fill="both", expand=True, pady=8)
@@ -829,7 +803,7 @@ class PanelReportes(tk.Frame):
         self.sv = servicio
         self.dia = date.today()
         _titulo(self, "Reportes", "Resumen del día por PEM. Cada app deja su registro en la carpeta del equipo "
-                "(carpeta «reportes»: pausas_, conexion_ y solicitudes_<mes>_<PEM>.csv), que abre en Excel. Las solicitudes "
+                "(carpeta «reportes» → una carpeta por PEM → una por mes: Solicitudes, Pausas, Conexion y Horas extra .csv), que abre en Excel. Las solicitudes "
                 "se registran al cerrarse (Forms o SharePoint); la conexión, cada vez que cambia el estado.")
         top = P.ad.Flujo(self, P.C["bg"], hueco=6)
         top.pack(fill="x")
@@ -901,7 +875,7 @@ class PanelReportes(tk.Frame):
             sup = sum(x["superaron"] for x in res.values())
             ext = sum(x["extra"] for x in res.values())
             self.lbl.config(text=("%d solicitud(es) cerradas · %d superaron el tiempo · %s de horas extra · %d PEM "
-                                  "con registro. Detalle de horas extra: horas_extra_<mes>_<PEM>.csv. Se actualiza "
+                                  "con registro. Detalle: reportes/<PEM>/<mes>/Horas extra.csv. Se actualiza "
                                   "cada minuto." % (tot, sup, reportes.h_min(ext), len(res))) if res else
                             "Sin registros ese día.", fg=P.C["mut"])
         self._tarea = self.after(60000, self.refrescar)

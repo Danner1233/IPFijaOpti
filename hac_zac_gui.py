@@ -213,16 +213,19 @@ class App(tk.Tk):
 
     # ---------- nombre y turno al abrir ----------
     def _preguntar_inicio(self, forzar=False):
-        """Primera vez: elegir el nombre de la lista del equipo. Cada dia (lunes a sabado): el turno que va a
-        manejar. La franja queda en la lista compartida, asi el admin lo ve y el reparto lo respeta."""
+        """Primera vez: elegir el nombre de la lista del equipo. Una vez por dia (lunes a sabado): el turno que va
+        a manejar; queda guardado hasta el dia siguiente aunque cierre la app (turno_hoy.json). La franja queda en
+        la lista compartida, asi el admin lo ve y el reparto lo respeta."""
         from hac_zac import reparto_equipo as R, servicio, turnos
+        if getattr(self, "_dialogo_inicio", False):
+            return
         aj = self.sv.ajustes
-        aj.update({k: v for k, v in servicio.cargar_ajustes().items() if k in ("pem_nombre", "turno_dia")})
+        aj.update({k: v for k, v in servicio.cargar_ajustes().items() if k == "pem_nombre" and v})
         nombre = (aj.get("pem_nombre") or "").strip()
         carpeta = (aj.get("carpeta_equipo") or "").strip()
         ahora = datetime.now()
         pedir_nombre = not nombre
-        pedir_turno = forzar or (turnos.hay_turno(ahora) and aj.get("turno_dia") != ahora.date().isoformat())
+        pedir_turno = forzar or (turnos.hay_turno(ahora) and not R.turno_elegido_hoy(nombre, ahora))
         if not (pedir_nombre or pedir_turno):
             return
         try:
@@ -230,14 +233,19 @@ class App(tk.Tk):
             nombres = R.nombres_equipo(carpeta)
         except Exception:
             franja, nombres = "", list(R.EQUIPO)
-        d = panel.DialogoInicio(self, nombres, nombre, turnos.turno_del_dia(franja, ahora) or "", pedir_nombre)
+        self._dialogo_inicio = True
+        try:
+            d = panel.DialogoInicio(self, nombres, nombre, R.turno_elegido_hoy(nombre, ahora) or
+                                    turnos.turno_del_dia(franja, ahora) or "", pedir_nombre)
+        finally:
+            self._dialogo_inicio = False
         if not d.resultado:
             return
         nombre, letra = d.resultado
         aj["pem_nombre"] = nombre
+        R.guardar_turno_hoy(nombre, letra, ahora)              # no se vuelve a preguntar hoy
         try:
             R.poner_mi_turno(carpeta, nombre, letra)
-            aj["turno_dia"] = ahora.date().isoformat()
         except Exception as ex:
             messagebox.showwarning("Turno", "No se pudo guardar el turno en la carpeta del equipo:\n%s" % ex,
                                    parent=self)
@@ -296,8 +304,8 @@ class App(tk.Tk):
         fin = turnos.horario(franja, ahora)[1].strftime("%H:%M")
         self.after(10, lambda: messagebox.showinfo(
             "Fin de turno", "Su turno termina a las %s y sigue con la solicitud %s.\n\nTermínela con calma: no se "
-            "la quitan. Su turno se cierra cuando la termine y el tiempo después de las %s queda registrado como "
-            "horas extra. Ya no recibe solicitudes nuevas." % (fin, caso, fin), parent=self))
+            "la quitan. Su turno se cierra cuando la termine y ya no recibe solicitudes nuevas." % (fin, caso),
+            parent=self))
 
     def _alternar_extra(self):
         """Horas extra voluntarias: empezar (motivo + tiempo; mientras duren puede recibir) o terminarlas."""
@@ -308,10 +316,6 @@ class App(tk.Tk):
         if e and e.get("tipo") == horas_extra.VOLUNTARIA:
             if messagebox.askyesno("Horas extra", "¿Terminar sus horas extra ahora?", parent=self):
                 horas_extra.terminar(carpeta, nombre, datetime.now(), horas_extra.LA_TERMINO)
-        elif e:
-            messagebox.showinfo("Horas extra", horas_extra.texto(e) + "\n\nSe cierran solas al terminar la "
-                                "solicitud.", parent=self)
-            return
         else:
             franja = reparto_equipo.franja_de(carpeta, nombre) if carpeta else ""
             if not horas_extra.puede_iniciar(franja):

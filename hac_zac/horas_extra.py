@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Horas extra del PEM (fuera de su turno), con registro en el reporte del equipo (horas_extra_<mes>_<PEM>.csv).
+"""Horas extra del PEM (fuera de su turno), con registro en el reporte del equipo (reportes/<PEM>/<mes>/Horas extra.csv).
 
-Dos clases:
-* «Terminando solicitud» (automatica): termino su turno con una solicitud abierta. NO se la quitan: la termina con
-  calma y desde la hora de salida hasta que la cierra cuenta como hora extra. Al cerrarla, su turno queda cerrado
-  (ya no recibe mas).
-* «Voluntaria»: fuera de su turno (o en el corte) el PEM pulsa «⏱ Horas extra» con un motivo y un tiempo; mientras
-  dure puede recibir solicitudes (hasta CORTE_EXTRA_MIN antes de terminar, para no quedar con una a medias).
-  Si al cumplirse el tiempo sigue con una abierta, continua como «Terminando solicitud».
+Solo cuentan las VOLUNTARIAS: fuera de su turno (o en el corte) el PEM pulsa «⏱ Horas extra» con un motivo y un
+tiempo; mientras duren puede recibir solicitudes (hasta CORTE_EXTRA_MIN antes de terminar, para no quedar con una a
+medias). Terminar una solicitud despues de la hora de salida NO es hora extra: se la deja terminar y su turno se
+cierra al acabarla, pero no se registra.
 
 El tramo en curso se guarda local (extra.json); cada tramo terminado es una fila del reporte.
 """
@@ -47,7 +44,7 @@ def _escribir(e):
 
 
 def activa(e):
-    return bool(isinstance(e, dict) and e.get("desde") and e.get("tipo") in (SOLICITUD, VOLUNTARIA))
+    return bool(isinstance(e, dict) and e.get("desde") and e.get("tipo") == VOLUNTARIA)
 
 
 def mi_extra():
@@ -106,38 +103,21 @@ def terminar(carpeta_equipo, nombre, cuando, como):
 
 
 def seguir(carpeta_equipo, nombre, franja, caso, ahora=None):
-    """Se llama cada minuto (con la presencia). Abre o cierra los tramos solos. Devuelve el tramo en curso."""
+    """Se llama cada minuto (con la presencia): cierra las voluntarias cuando se cumple su tiempo (si sigue con una
+    abierta, la termina, pero ese rato ya no cuenta). Devuelve el tramo en curso."""
     from . import cola
     ahora = ahora or datetime.now()
     with cola._bloqueo():
         e = _leer()
-        if activa(e):
-            if e["tipo"] == VOLUNTARIA:
-                hasta = _dt(e.get("hasta"))
-                if hasta and ahora >= hasta:
-                    terminar(carpeta_equipo, nombre, hasta, SE_CUMPLIO)
-                    if caso:                            # sigue con una abierta: la termina como hora extra
-                        letra, fin = _turno(franja, ahora)
-                        _escribir({"tipo": SOLICITUD, "desde": _iso(hasta), "caso": str(caso), "turno": letra,
-                                   "fin_turno": fin, "motivo": ""})
-                elif caso and e.get("caso") != str(caso):
-                    e["caso"] = str(caso)
-                    _escribir(e)
-            elif not caso:
-                terminar(carpeta_equipo, nombre, ahora, TERMINO)
-            elif e.get("caso") != str(caso):
+        if e.get("tipo") == SOLICITUD:                  # version anterior: terminar una solicitud ya no cuenta
+            _escribir({})
+        elif activa(e):
+            hasta = _dt(e.get("hasta"))
+            if hasta and ahora >= hasta:
+                terminar(carpeta_equipo, nombre, hasta, SE_CUMPLIO)
+            elif caso and e.get("caso") != str(caso):
                 e["caso"] = str(caso)
                 _escribir(e)
-        elif caso:
-            h = turnos.horario(franja, ahora)
-            if h and ahora >= h[1]:                     # termino su turno con una solicitud abierta
-                desde = h[1]
-                cerrado = _dt(e.get("cerrado"))
-                if cerrado and cerrado.date() == ahora.date() and cerrado > desde:
-                    desde = cerrado                     # ya habia un tramo hoy (p. ej. cerro y abrio la app)
-                letra, fin = _turno(franja, ahora)
-                _escribir({"tipo": SOLICITUD, "desde": _iso(desde), "caso": str(caso), "turno": letra,
-                           "fin_turno": fin, "motivo": ""})
     return mi_extra()
 
 
@@ -147,12 +127,8 @@ def cerrar(carpeta_equipo, nombre, ahora=None):
 
 
 def texto(extra, ahora=None):
-    """'⏱ Horas extra hasta 20:30' / '⏱ Horas extra · terminando la 65164 (desde 17:30)'."""
+    """'⏱ Horas extra hasta 20:30'."""
     if not activa(extra):
         return ""
-    if extra["tipo"] == VOLUNTARIA:
-        h = _dt(extra.get("hasta"))
-        return "⏱ Horas extra" + (" hasta %s" % h.strftime("%H:%M") if h else "")
-    d = _dt(extra.get("desde"))
-    return "⏱ Horas extra · terminando la %s%s" % (extra.get("caso") or "solicitud",
-                                                   " (desde %s)" % d.strftime("%H:%M") if d else "")
+    h = _dt(extra.get("hasta"))
+    return "⏱ Horas extra" + (" hasta %s" % h.strftime("%H:%M") if h else "")

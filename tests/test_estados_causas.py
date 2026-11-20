@@ -50,7 +50,11 @@ class PruebasValoresSharePoint(unittest.TestCase):
                                                       "Danner Arias", T)
         self.assertEqual(campos, {"Est_Seg": "No Exitosa", COL_NO: "ATP No Responde a PING", COL_ESC: None})
         self.assertEqual(cols, [COL_NO])
-        self.assertEqual(nota, "[17/11 16:50] PEM Danner Arias: No Exitosa · ATP No Responde a PING — Se llamo a NOC")
+        self.assertEqual(nota, "Se llamo a NOC", "en Observaciones solo queda la observacion")
+
+    def test_sin_observacion_no_escribe_nota_aunque_haya_causa(self):
+        _, nota, cols = sp_lector.cambios_estado("No exitosa", "ATP No Responde a PING", "  ", "Danner Arias", T)
+        self.assertEqual((nota, cols), ("", [COL_NO]))
 
     def test_escalamiento_limpia_la_causa_de_no_exitosa(self):
         campos, _, cols = sp_lector.cambios_estado("Escalamiento", "Falla Gestor ACS Friendly", "", "A", T)

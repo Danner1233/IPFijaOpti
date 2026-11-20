@@ -204,8 +204,8 @@ def enviar_reasignaciones(driver):
 
 def cambios_estado(estado, causa="", observacion="", pem="", ahora=None):
     """(campos, nota, columnas_de_causa) para JS_ESTADO. La causa va en la columna de su estado y se limpia la del
-    otro estado; con Exitosa se limpian las dos. La nota (para Observaciones) solo si hay causa u observacion."""
-    from datetime import datetime
+    otro estado; con Exitosa se limpian las dos. La nota (para Observaciones) es SOLO la observacion que escribio
+    el PEM, sin fecha, nombre, estado ni causa (esos ya van en sus columnas)."""
     from hac_zac import causas, estados
     est = estados.normalizar(estado) or estado
     campos = {"Est_Seg": estados.a_sp(est)}
@@ -215,12 +215,7 @@ def cambios_estado(estado, causa="", observacion="", pem="", ahora=None):
             campos[col] = (causa or None) if e == est else None
             if e == est and causa:
                 cols.append(col)
-    nota = ""
-    if causa or (observacion or "").strip():
-        partes = [estados.a_sp(est)] + ([causa] if causa else [])
-        nota = "[%s] PEM %s: %s" % ((ahora or datetime.now()).strftime("%d/%m %H:%M"), pem or "-", " · ".join(partes))
-        if (observacion or "").strip():
-            nota += " — " + " ".join(observacion.split())
+    nota = " ".join((observacion or "").split())
     return campos, nota, cols
 
 

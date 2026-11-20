@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Registro y reporte del equipo en la carpeta compartida (OneDrive), para abrir en Excel.
 
-<carpeta_equipo>/reportes/<tipo>_<AAAA-MM>_<Nombre>.csv   (tipo: pausas, conexion, solicitudes)
+<carpeta_equipo>/reportes/<PEM>/<AAAA-MM>/Solicitudes.csv · Pausas.csv · Conexion.csv · Horas extra.csv
 
-* Un archivo POR PEM y por mes: cada PC solo escribe el suyo, asi OneDrive no crea copias en conflicto.
+* Una carpeta POR PEM (y dentro una por mes): cada PC solo escribe la suya, asi OneDrive no crea copias en
+  conflicto. Los archivos del formato anterior (todos sueltos en reportes/) se mueven solos (migrar).
 * CSV con ';' y UTF-8 con BOM: Excel en espanol lo abre con columnas y tildes bien.
 * Si la carpeta no esta disponible, la fila queda en los datos locales (reportes_pendientes.json) y se escribe
   en la siguiente oportunidad: no se pierde nada.
@@ -63,9 +64,51 @@ def carpeta(carpeta_equipo):
     return os.path.join(carpeta_equipo, "reportes")
 
 
+# reportes/<PEM>/<AAAA-MM>/<Archivo>.csv  (una carpeta por PEM y dentro una por mes)
+ARCHIVOS = {"solicitudes": "Solicitudes.csv", "pausas": "Pausas.csv", "conexion": "Conexion.csv",
+            "horas_extra": "Horas extra.csv"}
+
+
+def carpeta_pem(nombre):
+    return re.sub(r"[^\w\- ]", "_", " ".join(str(nombre).split())).strip() or "sin_nombre"
+
+
 def archivo(carpeta_equipo, tipo, nombre, cuando):
-    seguro = re.sub(r"[^A-Za-z0-9_\- ]", "_", " ".join(str(nombre).split())).strip() or "sin_nombre"
-    return os.path.join(carpeta(carpeta_equipo), "%s_%s_%s.csv" % (tipo, cuando.strftime("%Y-%m"), seguro))
+    return os.path.join(carpeta(carpeta_equipo), carpeta_pem(nombre), cuando.strftime("%Y-%m"), ARCHIVOS[tipo])
+
+
+_VIEJO = re.compile(r"^(%s)_(\d{4}-\d{2})_(.+)\.csv$" % "|".join(ARCHIVOS))
+
+
+def migrar(carpeta_equipo):
+    """Los reportes de antes (reportes/<tipo>_<mes>_<PEM>.csv, todos juntos) pasan a la carpeta de su PEM.
+    El nombre del PEM se toma de la columna PEM (asi se conservan las tildes). Devuelve cuantos movio."""
+    base = carpeta(carpeta_equipo)
+    try:
+        nombres = [n for n in os.listdir(base) if _VIEJO.match(n)]
+    except OSError:
+        return 0
+    movidos = 0
+    for n in nombres:
+        tipo, mes, pem = _VIEJO.match(n).groups()
+        origen = os.path.join(base, n)
+        try:
+            with open(origen, encoding="utf-8-sig", newline="") as f:
+                filas = list(csv.reader(io.StringIO(f.read()), delimiter=SEP))
+            if len(filas) > 1 and filas[1] and filas[1][0].strip():
+                pem = filas[1][0].strip()
+            destino = os.path.join(base, carpeta_pem(pem), mes, ARCHIVOS[tipo])
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            if not os.path.exists(destino):
+                os.replace(origen, destino)
+            else:                                   # ya habia filas nuevas: se juntan (sin repetir el encabezado)
+                with open(destino, "a", encoding="utf-8", newline="") as f:
+                    csv.writer(f, delimiter=SEP).writerows(filas[1:])
+                os.remove(origen)
+            movidos += 1
+        except (OSError, csv.Error, UnicodeDecodeError):
+            continue
+    return movidos
 
 
 # ---------------------------------------------------------------------------------------------- escribir
@@ -209,14 +252,17 @@ def leer(carpeta_equipo, tipo, mes):
     """Filas (dict) de todos los PEM de un tipo y mes (datetime/date)."""
     out = []
     base = carpeta(carpeta_equipo)
-    pref = "%s_%s_" % (tipo, mes.strftime("%Y-%m"))
+    migrar(carpeta_equipo)
     try:
-        nombres = sorted(n for n in os.listdir(base) if n.startswith(pref) and n.endswith(".csv"))
+        pems = sorted(n for n in os.listdir(base) if os.path.isdir(os.path.join(base, n)))
     except OSError:
         return out
-    for n in nombres:
+    for pem in pems:
+        ruta = os.path.join(base, pem, mes.strftime("%Y-%m"), ARCHIVOS[tipo])
+        if not os.path.isfile(ruta):
+            continue
         try:
-            with open(os.path.join(base, n), encoding="utf-8-sig", newline="") as f:
+            with open(ruta, encoding="utf-8-sig", newline="") as f:
                 out.extend(csv.DictReader(io.StringIO(f.read()), delimiter=SEP))
         except (OSError, csv.Error, UnicodeDecodeError):
             continue

@@ -59,7 +59,7 @@ def _leer(ruta):
 # El PEM se pone EN PAUSA (almuerzo, reunion...) con razon opcional y un tiempo: no se le reparte ni se autoasigna.
 # Al cumplirse el tiempo vuelve solo a recibir. Se guarda en los datos locales (pausa.json) y se publica al equipo.
 MOTIVOS_PAUSA = ("Almuerzo", "Pausa activa", "Reunión", "Capacitación", "Baño")
-MINUTOS_PAUSA = (15, 30, 60, 90)
+MINUTOS_PAUSA = (15, 30, 60)
 
 
 def pausa_vigente(pausa, ahora=None):
@@ -212,7 +212,7 @@ def situacion(estado, caso="", pausa=None, turno=None, extra=None):
     """Lo que se muestra del PEM en Equipo/Admin: (clave, texto).
     en_proceso / disponible (activo con o sin solicitud), cierre (ultimos 30 min del turno: ya no recibe),
     extra (horas extra voluntarias: recibe), fuera_turno, pausa, ausente, desconectado.
-    `turno` = turnos.situacion(franja) o None. Si termino su turno con una abierta, la termina (horas extra)."""
+    `turno` = turnos.situacion(franja) o None. Si termino su turno con una abierta, la termina (no es hora extra)."""
     if estado == "desconectado":
         return "desconectado", ETIQUETA["desconectado"] + (" · con la %s" % caso if caso else "")
     if estado == "pausa" or pausa:
@@ -220,8 +220,10 @@ def situacion(estado, caso="", pausa=None, turno=None, extra=None):
     if estado == "ausente":
         return "ausente", ETIQUETA["ausente"] + (" · con la %s" % caso if caso else "")
     if caso:
-        if turno in ("antes", "fuera") or extra:
-            return "en_proceso", "● En proceso · %s · horas extra (terminando)" % caso
+        if extra:
+            return "en_proceso", "● En proceso · %s · horas extra" % caso
+        if turno in ("antes", "fuera"):
+            return "en_proceso", "● En proceso · %s · terminando (turno cumplido)" % caso
         return "en_proceso", "● En proceso · %s" % caso
     if extra and extra.get("tipo") == "Voluntaria":
         h = _dt(extra.get("hasta"))

@@ -37,6 +37,7 @@ sp_liberar.json
 # datos locales de pausa, conexion y reportes
 pausa.json
 extra.json
+turno_hoy.json
 conexion.json
 reportes_pendientes.json
 reportes/
