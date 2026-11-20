@@ -501,13 +501,14 @@ class PanelEquipo(tk.Frame):
         _titulo(self, "Equipo", "Quién está trabajando (estado automático, nadie lo cambia a mano). "
                 "En proceso: tiene una solicitud abierta (se ve cuál). Disponible: usa la app y no tiene ninguna. "
                 "En pausa: se puso en pausa (almuerzo, reunión...) y no recibe solicitudes. Ausente: la app abierta "
-                "pero 5 minutos sin usarla. Fuera de turno: no es su horario (franja que pone el admin). "
+                "pero 5 minutos sin usarla. Fuera de turno: no es su horario (el turno que eligió al abrir). Horas extra: terminando una solicitud después de su turno, o voluntarias (recibe). "
                 "Desconectado: cerró la aplicación o su PC no sincroniza.")
         m, self.t = P._tabla(self, self.COLS, (220, 300, 160, 130, 100), alto=10)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("en_proceso", foreground=P.C["acc"])
         self.t.tag_configure("disponible", foreground=P.C["ok"])
         self.t.tag_configure("cierre", foreground=P.C["ok"])
+        self.t.tag_configure("extra", foreground=P.C["acc"])
         self.t.tag_configure("fuera_turno", foreground=P.C["mut"])
         self.t.tag_configure("ausente", foreground=P.C["warn"])
         self.t.tag_configure("pausa", foreground=P.C["warn"])
@@ -537,13 +538,13 @@ class PanelEquipo(tk.Frame):
         else:
             filas = presencia.equipo(carpeta)
             franjas = {cola._plano(p["nombre"]): p.get("franja") or "" for p in reparto_equipo.roster(carpeta)}
-            orden = {"en_proceso": 0, "disponible": 1, "cierre": 2, "pausa": 3, "ausente": 4, "fuera_turno": 5,
-                     "desconectado": 6}
+            orden = {"en_proceso": 0, "disponible": 1, "extra": 1, "cierre": 2, "pausa": 3, "ausente": 4,
+                     "fuera_turno": 5, "desconectado": 6}
             vistas = []
             for f in filas:
                 fr = franjas.get(cola._plano(f["nombre"]), "")
-                vistas.append((presencia.situacion(f["estado"], f.get("caso"), f.get("pausa"), turnos.situacion(fr)),
-                               fr, f))
+                vistas.append((presencia.situacion(f["estado"], f.get("caso"), f.get("pausa"), turnos.situacion(fr),
+                                                   f.get("extra")), fr, f))
             vistas.sort(key=lambda x: (orden.get(x[0][0], 9), x[2]["nombre"].lower()))
             cuenta = {}
             for (clave, texto), fr, f in vistas:
@@ -551,7 +552,7 @@ class PanelEquipo(tk.Frame):
                 self.t.insert("", "end", tags=(clave,), values=(
                     f["nombre"], texto, turnos.texto(fr) or "—", presencia.hace(f["ultima_actividad"]),
                     ("%d h %02d min" % divmod(f["en_linea_hoy_min"], 60)) if f["en_linea_hoy_min"] else "—"))
-            disp = cuenta.get("disponible", 0) + cuenta.get("cierre", 0)
+            disp = cuenta.get("disponible", 0) + cuenta.get("cierre", 0) + cuenta.get("extra", 0)
             self.lbl.config(text="%d en proceso · %d disponible(s) · %d en pausa · %d ausente(s) · %d fuera de turno · "
                                  "%d desconectado(s) · se actualiza cada 30 s" % (
                                      cuenta.get("en_proceso", 0), disp, cuenta.get("pausa", 0),
@@ -653,18 +654,21 @@ class PanelAdmin(tk.Frame):
             caso = fila.get("caso") or ""
             if caso:
                 self._casos[p["nombre"]] = caso
-            huerfana = bool(caso) and (est == "desconectado" or sit_t in ("antes", "fuera"))
+            # fuera de turno con una abierta NO es huerfana: la termina (horas extra). Solo si se desconecto.
+            huerfana = bool(caso) and est == "desconectado"
             if huerfana:
                 huerfanas.append("%s (%s)" % (p["nombre"], caso))
             if not carpeta:
                 en_app = "— (sin carpeta)"
             elif fila:
-                en_app = presencia.situacion(est, caso, fila.get("pausa"), sit_t)[1]
+                en_app = presencia.situacion(est, caso, fila.get("pausa"), sit_t, fila.get("extra"))[1]
                 if huerfana:
                     en_app = "⚠ " + en_app + " · reasignar"
             else:
                 en_app = "○ Sin dato"
-            puede = p.get("activo") and est == "en_linea" and turnos.puede_recibir(p.get("franja"))
+            from . import horas_extra
+            puede = p.get("activo") and est == "en_linea" and (turnos.puede_recibir(p.get("franja")) or
+                                                               horas_extra.recibe(fila.get("extra")))
             if puede:
                 listos.append(p["nombre"])
             tag = "huerfana" if huerfana else ("off" if not p.get("activo") else ("on" if puede else "lejos"))
@@ -681,7 +685,7 @@ class PanelAdmin(tk.Frame):
             self.t.selection_set(sel[0])
         msg, color = self._estado_reparto(carpeta, roster, listos)
         if huerfanas:
-            msg += "  ⚠ Con solicitud abierta y desconectado o fuera de turno: %s. Selecciónelo y pulse «Reasignar»." \
+            msg += "  ⚠ Con solicitud abierta y desconectado: %s. Selecciónelo y pulse «Reasignar»." \
                    % ", ".join(huerfanas)
             color = P.C["err"]
         self.lbl.config(text=msg, fg=color)
@@ -817,7 +821,7 @@ class PanelReportes(tk.Frame):
     """ROL ADMIN: resumen del dia por PEM desde los reportes de la carpeta del equipo (OneDrive).
     Los archivos completos (pausas, conexion, solicitudes) se abren en Excel con 'Abrir carpeta'."""
     COLS = ("PEM", "Cerradas", "Exitosas", "No exitosas", "Escalam.", "Prom. min", "Superaron",
-            "Activo (min)", "Ausente (min)", "En pausa (min)", "Pausas")
+            "Activo (min)", "Ausente (min)", "En pausa (min)", "Pausas", "Horas extra (día)", "Horas extra (mes)")
 
     def __init__(self, padre, servicio):
         from datetime import date
@@ -835,7 +839,7 @@ class PanelReportes(tk.Frame):
         P.BOTON(top, "Día siguiente ▶", lambda: self._mover(1), False, 14).pack(side="left")
         P.BOTON(top, "Hoy", self._hoy, False, 6).pack(side="left")
         P.BOTON(top, "Abrir carpeta de reportes", self._abrir, True, 24).pack(side="left")
-        m, self.t = P._tabla(self, self.COLS, (200, 75, 75, 85, 75, 80, 80, 90, 95, 105, 65), alto=10)
+        m, self.t = P._tabla(self, self.COLS, (200, 75, 75, 85, 75, 80, 80, 90, 95, 105, 65, 120, 125), alto=10)
         m.pack(fill="both", expand=True, pady=8)
         self.t.tag_configure("alerta", foreground=P.C["warn"])
         self.lbl = tk.Label(self, text="", bg=P.C["bg"], fg=P.C["mut"], font=(P.FONT, 9), anchor="w",
@@ -884,17 +888,21 @@ class PanelReportes(tk.Frame):
             self.lbl.config(text="Configure la carpeta del equipo en Ajustes.", fg=P.C["warn"])
         else:
             res = reportes.resumen_dia(c, self.dia)
+            mes = reportes.extra_mes(c, self.dia)
             ent = lambda v: ("%d" % round(v)) if v else "—"
             for nombre in sorted(res, key=str.lower):
                 x = res[nombre]
                 self.t.insert("", "end", tags=("alerta",) if x["superaron"] else (), values=(
                     nombre, x["cerradas"], x["exitosas"], x["no_exitosas"], x["escalamientos"],
                     ("%.1f" % x["promedio"]).replace(".", ",") if x["promedio"] else "—", x["superaron"],
-                    ent(x["activo"]), ent(x["ausente"]), ent(x["pausa"]), x["pausas"]))
+                    ent(x["activo"]), ent(x["ausente"]), ent(x["pausa"]), x["pausas"],
+                    reportes.h_min(x["extra"]), reportes.h_min(mes.get(nombre, 0))))
             tot = sum(x["cerradas"] for x in res.values())
             sup = sum(x["superaron"] for x in res.values())
-            self.lbl.config(text=("%d solicitud(es) cerradas · %d superaron el tiempo · %d PEM con registro. "
-                                  "Se actualiza cada minuto." % (tot, sup, len(res))) if res else
+            ext = sum(x["extra"] for x in res.values())
+            self.lbl.config(text=("%d solicitud(es) cerradas · %d superaron el tiempo · %s de horas extra · %d PEM "
+                                  "con registro. Detalle de horas extra: horas_extra_<mes>_<PEM>.csv. Se actualiza "
+                                  "cada minuto." % (tot, sup, reportes.h_min(ext), len(res))) if res else
                             "Sin registros ese día.", fg=P.C["mut"])
         self._tarea = self.after(60000, self.refrescar)
 

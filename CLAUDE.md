@@ -84,7 +84,7 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   tras RESPALDO_MIN 5 min sin admin (`respaldo_activo`, ajuste `admin_respaldo`). Reasignar desde Admin
   (`cola.pedir_reasignar` → `sp_lector.JS_REASIGNAR`; el PEM anterior la suelta con `cola.soltar_si_ya_no_es_mia`).
 - Ritmo del reparto (`reparto_equipo.RITMO`/`en_descanso`): el PEM que acaba de cerrar (Modified de SP) descansa
-  15 s con 1-3 libres, 8 s con 4, nada con 5+.
+  1 min 30 s con 1-3 libres, 45 s con 4, nada con 5+ (de una).
 - Contingencia (`hac_zac/panel_emergencia.py`, pestaña «Contingencia», `PanelContingencia`): Guía de emergencia (`GUIA`, comandos iguales
   al script; prueba en test_ritmo_buscador) y Buscador de IPs por nodo (`hac_zac/buscador_ips.py`: lee el .xlsx sin
   openpyxl; índice sin datos de clientes en `<carpeta_equipo>/buscador_ips.json`; «Actualizar Excel…»).
@@ -99,3 +99,12 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   serial (SCOM, ZTE, HWTC, FHTT, ALCL…); lo demás es serial. Solicitud compacta (`plantilla.compactar_solicitud` /
   `extraer_solicitud`): sin blancos de sobra, dos tras el encabezado y uno antes de PROPIEDAD RED, SERVICIO SOBRE ATP,
   CUENTA RR, ALIADO, CANTIDAD DE IPs y FECHA SOLICITUD; en la caja al pegar, en la plantilla y al copiar. Prueba: test_serial_formato.
+- Navegador oculto (Ajustes «Ver navegador» apagado): fuera de pantalla y sin botón en la barra de tareas
+  (`navegador.barra_de_tareas`: WS_EX_TOOLWINDOW por Win32/ctypes); vuelve solo al iniciar sesión. Probado con Chrome real.
+- Al abrir (`App._preguntar_inicio`, `panel.DialogoInicio`): 1a vez el nombre de `reparto_equipo.EQUIPO` (+ roster);
+  cada día (lun-sáb) el turno A-F por lista (`turnos.lista_turnos`) → franja en roster (`poner_mi_turno`, ajuste
+  `turno_dia`). Clic en el estado del encabezado = cambiar turno.
+- Fin de turno con una abierta: la termina (ya no es «huérfana» en Admin salvo desconectado); el tiempo tras la salida
+  es hora extra. `hac_zac/horas_extra.py` (extra.json): «Terminando solicitud» automática y «Voluntaria» (botón
+  «⏱ Horas extra» fuera de turno, `DialogoExtra`; recibe hasta 15 min antes; `reparto_equipo.extras_por_nombre`).
+  Reporte `horas_extra_<mes>_<PEM>.csv`; Reportes muestra horas extra del día y del mes. Prueba: test_turnos_extra.

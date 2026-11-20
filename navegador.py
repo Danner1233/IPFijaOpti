@@ -6,7 +6,8 @@ Si Chrome "se cae" al arrancar:
   2) reintenta con opciones de compatibilidad;
   3) si el perfil esta danado, usa uno nuevo (habra que iniciar sesion otra vez);
   4) como ultimo recurso abre Microsoft Edge (viene con Windows).
-El navegador SIEMPRE se muestra: no se oculta.
+Con «Ver navegador» apagado en Ajustes queda fuera de la pantalla y sin boton en la barra de tareas; vuelve solo
+cuando hay que iniciar sesion (aplicar_visibilidad con forzar=True).
 """
 import glob
 import json
@@ -43,6 +44,10 @@ def _opciones(clase, perfil, ancho, compat, extra=(), headless=False):
     o.add_argument("--no-default-browser-check")
     o.add_argument("--window-size=%s" % ancho)
     o.add_argument("--disable-features=msEdgeSidebarV2,RendererCodeIntegrity")
+    # oculto (fuera de pantalla / sin barra de tareas) debe seguir trabajando a ritmo normal
+    o.add_argument("--disable-backgrounding-occluded-windows")
+    o.add_argument("--disable-renderer-backgrounding")
+    o.add_argument("--disable-background-timer-throttling")
     if compat:
         o.add_argument("--disable-gpu")
         o.add_argument("--disable-dev-shm-usage")
@@ -83,16 +88,123 @@ def ver_navegador(proceso):
 
 def aplicar_visibilidad(driver, proceso, forzar=None):
     """Muestra u oculta la ventana (sin cerrarla) segun el ajuste; se llama en cada vuelta del lector, asi el
-    cambio se nota en segundos. `forzar=True` la muestra (p. ej. si hace falta escribir algo en ella)."""
+    cambio se nota en segundos. `forzar=True` la muestra (p. ej. si hace falta escribir algo en ella).
+    Oculta = fuera de la pantalla Y sin boton en la barra de tareas (sigue trabajando normal)."""
     ver = ver_navegador(proceso) if forzar is None else bool(forzar)
-    if getattr(driver, "_hz_ver", None) == ver:
-        return
+    if getattr(driver, "_hz_ver", None) != ver:
+        try:
+            x, y = DENTRO if ver else FUERA
+            driver.set_window_position(x, y)
+            driver._hz_ver = ver
+        except Exception:
+            pass
+    if getattr(driver, "_hz_barra", None) != ver:
+        if barra_de_tareas(driver, ver):
+            driver._hz_barra = ver
+
+
+# ---------------------------------------------------------------------------------------------- barra de tareas
+WS_EX_TOOLWINDOW = 0x00000080     # ventana de herramienta: sin boton en la barra de tareas ni en Alt+Tab
+WS_EX_APPWINDOW = 0x00040000
+GWL_EXSTYLE = -20
+
+
+def estilo_barra(estilo, ver):
+    """Estilo extendido de la ventana para mostrarla (con boton en la barra) u ocultarla (sin boton)."""
+    if ver:
+        return (estilo & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+    return (estilo | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+
+
+def descendientes(raiz, pares):
+    """PIDs de `raiz` y todos sus hijos/nietos; pares = [(pid, pid_padre)]."""
+    hijos = {}
+    for pid, padre in pares:
+        hijos.setdefault(padre, []).append(pid)
+    out, pila = set(), [raiz]
+    while pila:
+        p = pila.pop()
+        if p in out:
+            continue
+        out.add(p)
+        pila.extend(hijos.get(p, []))
+    return out
+
+
+def _procesos():
+    """[(pid, pid_padre)] de Windows (Toolhelp32, sin dependencias)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PE(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", ctypes.c_wchar * 260)]
+    k = ctypes.windll.kernel32
+    k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = k.CreateToolhelp32Snapshot(0x2, 0)               # TH32CS_SNAPPROCESS
+    out = []
     try:
-        x, y = DENTRO if ver else FUERA
-        driver.set_window_position(x, y)
-        driver._hz_ver = ver
+        e = PE()
+        e.dwSize = ctypes.sizeof(PE)
+        ok = k.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            out.append((e.th32ProcessID, e.th32ParentProcessID))
+            ok = k.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        k.CloseHandle(snap)
+    return out
+
+
+def _ventanas_de(pids):
+    """Ventanas principales (visibles, de primer nivel) de esos procesos."""
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.windll.user32
+    out = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def cada(hwnd, _):
+        pid = wintypes.DWORD()
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value in pids and u.IsWindowVisible(hwnd) and not u.GetWindow(hwnd, 4):   # 4 = GW_OWNER
+            clase = ctypes.create_unicode_buffer(64)
+            u.GetClassNameW(hwnd, clase, 64)
+            if clase.value.startswith("Chrome_WidgetWin"):
+                out.append(hwnd)
+        return True
+    u.EnumWindows(cada, 0)
+    return out
+
+
+def barra_de_tareas(driver, ver):
+    """Quita (ver=False) o devuelve (ver=True) el boton del navegador en la barra de tareas. True si lo aplico.
+    Nunca lanza error: si no se puede, el navegador solo queda fuera de la pantalla como antes."""
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        raiz = driver.service.process.pid                     # chromedriver -> chrome.exe (hijos)
+        hwnds = _ventanas_de(descendientes(raiz, _procesos()) - {raiz})
+        if not hwnds:
+            return False
+        leer = getattr(u, "GetWindowLongPtrW", u.GetWindowLongW)
+        poner = getattr(u, "SetWindowLongPtrW", u.SetWindowLongW)
+        leer.restype = poner.restype = ctypes.c_ssize_t
+        poner.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t)
+        leer.argtypes = (ctypes.c_void_p, ctypes.c_int)
+        for h in hwnds:
+            u.ShowWindow(h, 0)                                # SW_HIDE: la barra solo se entera al volver a mostrar
+            poner(h, GWL_EXSTYLE, estilo_barra(leer(h, GWL_EXSTYLE), ver))
+            u.ShowWindow(h, 5 if ver else 4)                  # SW_SHOW / SW_SHOWNOACTIVATE (sigue fuera de pantalla)
+            if ver:
+                u.SetForegroundWindow(h)
+        return True
     except Exception:
-        pass
+        return False
 
 
 def _msg(e, n=3):
@@ -120,6 +232,7 @@ def abrir_navegador(perfil, ancho="1300,850", log=print, extra=(), headless=Fals
             d = drv(options=_opciones(opt, p, ancho, compat, extra, headless))
             if proceso:
                 d._hz_ver = ver_navegador(proceso)
+                aplicar_visibilidad(d, proceso)          # oculto: tambien fuera de la barra de tareas
             return d
         except Exception as e:
             errores.append("%s: %s" % (nombre, _msg(e)))

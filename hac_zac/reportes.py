@@ -23,6 +23,8 @@ COLUMNAS = {
     "solicitudes": ("PEM", "Fecha", "Solicitud", "Cuenta RR", "Red", "Origen", "Asignada", "Cerrada", "Minutos",
                     "Límite", "Superó el tiempo", "Resultado", "Causa", "Observación", "Justificación demora",
                     "Registro"),
+    "horas_extra": ("PEM", "Fecha", "Turno", "Fin del turno", "Inicio", "Fin", "Minutos", "Tipo", "Motivo",
+                    "Cómo terminó"),
 }
 ESTADOS = {"en_linea": "Activo", "ausente": "Ausente", "pausa": "En pausa"}
 REANUDO, SE_CUMPLIO = "Reanudó", "Se cumplió el tiempo"
@@ -229,7 +231,7 @@ def resumen_dia(carpeta_equipo, dia):
     def fila(n):
         return res.setdefault(n, {"cerradas": 0, "exitosas": 0, "no_exitosas": 0, "escalamientos": 0,
                                   "min_total": 0.0, "con_tiempo": 0, "superaron": 0, "activo": 0.0,
-                                  "ausente": 0.0, "pausa": 0.0, "pausas": 0})
+                                  "ausente": 0.0, "pausa": 0.0, "pausas": 0, "extra": 0.0})
 
     for r in leer(carpeta_equipo, "solicitudes", dia):
         if r.get("Fecha") != f:
@@ -256,6 +258,25 @@ def resumen_dia(carpeta_equipo, dia):
     for r in leer(carpeta_equipo, "pausas", dia):
         if r.get("Fecha") == f:
             fila(r.get("PEM", ""))["pausas"] += 1
+    for r in leer(carpeta_equipo, "horas_extra", dia):
+        if r.get("Fecha") == f:
+            fila(r.get("PEM", ""))["extra"] += _num(r.get("Minutos"))
     for x in res.values():
         x["promedio"] = (x["min_total"] / x["con_tiempo"]) if x["con_tiempo"] else 0.0
     return res
+
+
+def extra_mes(carpeta_equipo, mes):
+    """{PEM: minutos de horas extra en el mes}."""
+    out = {}
+    for r in leer(carpeta_equipo, "horas_extra", mes):
+        out[r.get("PEM", "")] = out.get(r.get("PEM", ""), 0.0) + _num(r.get("Minutos"))
+    return out
+
+
+def h_min(minutos):
+    """95 -> '1 h 35 min'; 0 -> '—'."""
+    m = int(round(minutos or 0))
+    if not m:
+        return "—"
+    return ("%d h %02d min" % divmod(m, 60)) if m >= 60 else "%d min" % m

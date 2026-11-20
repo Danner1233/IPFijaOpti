@@ -65,7 +65,7 @@ def liberadores(item):
 # ---------------------------------------------------------------------------------------------- ritmo
 # Cuantas libres hay decide cuanto descansa el PEM que ACABA de cerrar una antes de recibir la siguiente:
 # pocas libres -> descansa; muchas -> se reparte sin pausa. [(maximo de libres, segundos de descanso)]
-RITMO = ((3, 15), (4, 8))          # 1-3 libres: 15 s · 4 libres: 8 s · 5 o mas: sin descanso
+RITMO = ((3, 90), (4, 45))         # 1-3 libres: 1 min 30 s · 4 libres: 45 s · 5 o mas: sin descanso (de una)
 
 
 def descanso_s(libres):
@@ -107,18 +107,19 @@ def en_descanso(items, roster, ahora=None):
     return out
 
 
-def elegibles(roster, presencia_por_nombre, ocup, ahora=None):
-    """PEM activos por el admin, EN TURNO, Activos en la app y libres; primero el que lleva mas tiempo sin recibir."""
+def elegibles(roster, presencia_por_nombre, ocup, ahora=None, extra=()):
+    """PEM activos por el admin, EN TURNO (o en horas extra voluntarias: `extra` = nombres planos), Activos en la
+    app y libres; primero el que lleva mas tiempo sin recibir."""
     cand = [p for p in roster if p.get("activo") and p["nombre"] not in ocup and
-            turnos.puede_recibir(p.get("franja"), ahora) and
+            (turnos.puede_recibir(p.get("franja"), ahora) or _plano(p["nombre"]) in extra) and
             presencia_por_nombre.get(_plano(p["nombre"])) == "en_linea"]
     return sorted(cand, key=lambda p: p.get("ultimo") or "")
 
 
-def plan(items, roster, presencia_por_nombre, ahora=None):
+def plan(items, roster, presencia_por_nombre, ahora=None, extra=()):
     """[(item, nombre)] a asignar ahora."""
     ocup = ocupados(items, roster, ahora) | set(en_descanso(items, roster, ahora))   # ritmo: descansan un poco
-    cand = elegibles(roster, presencia_por_nombre, ocup, ahora)
+    cand = elegibles(roster, presencia_por_nombre, ocup, ahora, extra)
     libres = sorted((it for it in items if cola.es_libre(it)), key=lambda i: str(i.get("Created") or ""))
     out = []
     for it in libres:
@@ -137,6 +138,15 @@ def presencia_por_nombre(carpeta_equipo, ahora=None):
     if not carpeta_equipo:
         return {}
     return {_plano(r["nombre"]): r["estado"] for r in presencia.equipo(carpeta_equipo, ahora)}
+
+
+def extras_por_nombre(carpeta_equipo, ahora=None):
+    """Nombres planos de los PEM en horas extra voluntarias que aun pueden recibir."""
+    from . import horas_extra, presencia
+    if not carpeta_equipo:
+        return set()
+    return {_plano(r["nombre"]) for r in presencia.equipo(carpeta_equipo, ahora)
+            if horas_extra.recibe(r.get("extra"), ahora)}
 
 
 # ---------------------------------------------------------------------------------------------- reparto.json
@@ -224,6 +234,38 @@ def poner_activo(carpeta_equipo, nombre, activo):
 
 def poner_franja(carpeta_equipo, nombre, franja):
     _cambiar(carpeta_equipo, nombre, franja=turnos.franja_valida(franja))
+
+
+# Lista del equipo para elegir el nombre al abrir la app por primera vez (+ los que el admin agregue).
+EQUIPO = ("Juan Gutierrez", "Jhan Pool Guerra Cruz", "Danner Arias", "Laura Calderón", "Camilo Vera",
+          "Gina Vargas", "Luis Paredes", "Fabián Peña")
+
+
+def nombres_equipo(carpeta_equipo=""):
+    out = list(EQUIPO)
+    try:
+        extra = roster(carpeta_equipo)
+    except Exception:
+        extra = []
+    for p in extra:
+        if p.get("nombre") and not any(mismo(p["nombre"], n) for n in out):
+            out.append(p["nombre"])
+    return out
+
+
+def poner_mi_turno(carpeta_equipo, nombre, letra):
+    """El PEM eligio su turno al abrir: queda su franja en la lista compartida (lo agrega si no estaba,
+    sin activarlo: activar sigue siendo del admin). Devuelve la franja."""
+    franja = turnos.franja_de_letra(letra)
+    lista = roster(carpeta_equipo)
+    p = next((x for x in lista if mismo(x.get("nombre"), nombre)), None)
+    if p is None:
+        p = {"nombre": " ".join(str(nombre).split()), "activo": False, "whatsapp": "", "ultimo": "", "franja": ""}
+        lista.append(p)
+    p["franja"] = franja
+    p["turno_elegido"] = datetime.now().isoformat(timespec="seconds")
+    guardar_roster(carpeta_equipo, lista)
+    return franja
 
 
 def franja_de(carpeta_equipo, nombre):

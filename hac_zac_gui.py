@@ -201,6 +201,8 @@ class App(tk.Tk):
         if not demo:
             self.after(2000, self._publicar_presencia)
         self.after(3000, self._pintar_estado)
+        if not demo:
+            self.after(1200, self._preguntar_inicio)            # nombre (1a vez) y turno de hoy, por lista
         # Al abrir, Windows aun no ha dado su tamano final a la ventana cuando se calcula el diseno: sin esto
         # hay que maximizar y restaurar para ver todo. Se fuerza un recalculo cuando la ventana ya esta mostrada.
         self.bind("<Map>", self._al_mostrar, add="+")
@@ -208,6 +210,44 @@ class App(tk.Tk):
             self.after(ms, self._relayout)
         self.after(250, self._poll)
         self.after(40, self._animar)
+
+    # ---------- nombre y turno al abrir ----------
+    def _preguntar_inicio(self, forzar=False):
+        """Primera vez: elegir el nombre de la lista del equipo. Cada dia (lunes a sabado): el turno que va a
+        manejar. La franja queda en la lista compartida, asi el admin lo ve y el reparto lo respeta."""
+        from hac_zac import reparto_equipo as R, servicio, turnos
+        aj = self.sv.ajustes
+        aj.update({k: v for k, v in servicio.cargar_ajustes().items() if k in ("pem_nombre", "turno_dia")})
+        nombre = (aj.get("pem_nombre") or "").strip()
+        carpeta = (aj.get("carpeta_equipo") or "").strip()
+        ahora = datetime.now()
+        pedir_nombre = not nombre
+        pedir_turno = forzar or (turnos.hay_turno(ahora) and aj.get("turno_dia") != ahora.date().isoformat())
+        if not (pedir_nombre or pedir_turno):
+            return
+        try:
+            franja = R.franja_de(carpeta, nombre) if nombre else ""
+            nombres = R.nombres_equipo(carpeta)
+        except Exception:
+            franja, nombres = "", list(R.EQUIPO)
+        d = panel.DialogoInicio(self, nombres, nombre, turnos.turno_del_dia(franja, ahora) or "", pedir_nombre)
+        if not d.resultado:
+            return
+        nombre, letra = d.resultado
+        aj["pem_nombre"] = nombre
+        try:
+            R.poner_mi_turno(carpeta, nombre, letra)
+            aj["turno_dia"] = ahora.date().isoformat()
+        except Exception as ex:
+            messagebox.showwarning("Turno", "No se pudo guardar el turno en la carpeta del equipo:\n%s" % ex,
+                                   parent=self)
+        servicio.guardar_ajustes(aj)
+        try:
+            self.v_aj.refrescar()
+        except Exception:
+            pass
+        self._publicar_presencia()
+        self._pintar_estado(repetir=False)
 
     # ---------- presencia del equipo ----------
     def _actividad(self, e=None):
@@ -222,7 +262,13 @@ class App(tk.Tk):
 
             def trabajo(ultima=self._ultima_actividad, ocupado=bool(self.corriendo), pausa=presencia.mi_pausa()):
                 try:
-                    reg = presencia.publicar(carpeta, nombre, ultima, ocupado, pausa=pausa, caso=self._mi_caso(nombre))
+                    from hac_zac import horas_extra, reparto_equipo
+                    caso = self._mi_caso(nombre)
+                    try:      # horas extra: abre / cierra el tramo solo (al terminar el turno con una abierta, etc.)
+                        extra = horas_extra.seguir(carpeta, nombre, reparto_equipo.franja_de(carpeta, nombre), caso)
+                    except Exception:
+                        extra = horas_extra.mi_extra()
+                    reg = presencia.publicar(carpeta, nombre, ultima, ocupado, pausa=pausa, caso=caso, extra=extra)
                     self._publicado = datetime.now()
                     from hac_zac import reportes
                     reportes.seguir_conexion(carpeta, nombre, "pausa" if pausa else reg["estado"])
@@ -248,9 +294,37 @@ class App(tk.Tk):
             return
         self._aviso_salida = clave
         fin = turnos.horario(franja, ahora)[1].strftime("%H:%M")
-        self.after(10, lambda: messagebox.showwarning(
-            "Fin de turno", "Su turno termina a las %s y sigue con la solicitud %s abierta.\n\nCiérrela, o "
-            "Libérela en la Cola, o pídale al admin que la reasigne." % (fin, caso), parent=self))
+        self.after(10, lambda: messagebox.showinfo(
+            "Fin de turno", "Su turno termina a las %s y sigue con la solicitud %s.\n\nTermínela con calma: no se "
+            "la quitan. Su turno se cierra cuando la termine y el tiempo después de las %s queda registrado como "
+            "horas extra. Ya no recibe solicitudes nuevas." % (fin, caso, fin), parent=self))
+
+    def _alternar_extra(self):
+        """Horas extra voluntarias: empezar (motivo + tiempo; mientras duren puede recibir) o terminarlas."""
+        from hac_zac import horas_extra, reparto_equipo
+        carpeta = (self.sv.ajustes.get("carpeta_equipo") or "").strip()
+        nombre = (self.sv.ajustes.get("pem_nombre") or "").strip()
+        e = horas_extra.mi_extra()
+        if e and e.get("tipo") == horas_extra.VOLUNTARIA:
+            if messagebox.askyesno("Horas extra", "¿Terminar sus horas extra ahora?", parent=self):
+                horas_extra.terminar(carpeta, nombre, datetime.now(), horas_extra.LA_TERMINO)
+        elif e:
+            messagebox.showinfo("Horas extra", horas_extra.texto(e) + "\n\nSe cierran solas al terminar la "
+                                "solicitud.", parent=self)
+            return
+        else:
+            franja = reparto_equipo.franja_de(carpeta, nombre) if carpeta else ""
+            if not horas_extra.puede_iniciar(franja):
+                messagebox.showinfo("Horas extra", "Está en su turno: las horas extra se cuentan fuera de él.",
+                                    parent=self)
+                return
+            d = panel.DialogoExtra(self)
+            if not d.resultado:
+                return
+            horas_extra.iniciar_voluntaria(d.resultado[0], d.resultado[1], franja, carpeta_equipo=carpeta,
+                                           nombre=nombre)
+        self._publicar_presencia()
+        self._pintar_estado(repetir=False)
 
     @staticmethod
     def _mi_caso(nombre):
@@ -299,20 +373,33 @@ class App(tk.Tk):
             if carpeta and nombre and not self.demo:
                 presencia.cerrar_pausa_vencida(carpeta, nombre, ahora)     # se cumplio: al reporte
             pausa = presencia.mi_pausa(ahora)
+            from hac_zac import horas_extra, reparto_equipo, turnos
+            extra = horas_extra.mi_extra()
+            franja = reparto_equipo.franja_de(carpeta, nombre) if carpeta else ""
             color = {"en_linea": C["ok"], "ausente": C["warn"]}.get(estado, C["mut"])
             texto = presencia.ETIQUETA[estado] + (" (%s)" % ayuda if ayuda else "")
             if pausa:
                 texto, color = presencia.texto_pausa(pausa), C["warn"]
             elif estado == "en_linea":
-                from hac_zac import reparto_equipo, turnos
-                franja = reparto_equipo.franja_de(carpeta, nombre) if carpeta else ""
                 caso = self._mi_caso(nombre)
-                clave, texto = presencia.situacion(estado, caso, None, turnos.situacion(franja, ahora))
-                color = {"en_proceso": C["acc"], "fuera_turno": C["mut"]}.get(clave, C["ok"])
+                clave, texto = presencia.situacion(estado, caso, None, turnos.situacion(franja, ahora), extra)
+                color = {"en_proceso": C["acc"], "fuera_turno": C["mut"], "extra": C["acc"]}.get(clave, C["ok"])
                 if turnos.texto(franja, ahora):
                     texto += "  ·  " + turnos.texto(franja, ahora)
                 self._avisar_salida(franja, caso, ahora)
+            if extra and not pausa and horas_extra.texto(extra) not in texto:
+                texto += "  ·  " + horas_extra.texto(extra)
             self.lbl_estado.config(text=texto, fg=color)
+            # «⏱ Horas extra»: fuera del turno (o con unas en curso)
+            ver_extra = not self.demo and nombre and (extra or horas_extra.puede_iniciar(franja, ahora))
+            if ver_extra:
+                self.b_extra.config(text="■ Terminar extra" if extra and extra.get("tipo") == horas_extra.VOLUNTARIA
+                                    else "⏱ Horas extra")
+                if not self.b_extra.winfo_manager():
+                    donde = {"before": self.b_pausa} if self.b_pausa.winfo_manager() else {}
+                    self.b_extra.pack(side="right", padx=(8, 0), **donde)
+            elif self.b_extra.winfo_manager():
+                self.b_extra.pack_forget()
             self.b_pausa.config(text="▶ Reanudar" if pausa else "⏸ Pausa",
                                 bg=C["acc"] if pausa else C["card2"], fg=C["on_acc"] if pausa else C["warn"])
             if getattr(self, "_en_pausa", False) and not pausa:
@@ -382,14 +469,21 @@ class App(tk.Tk):
         # Mi estado en el equipo: lo calcula el sistema (uso de la app / proceso corriendo / sincronizacion).
         # NO es un boton: nadie puede ponerse "Activo" a mano.
         self.lbl_estado = tk.Label(h, text="○ Desconectado", bg=C["bg"], fg=C["mut"], font=(FONT, 10, "bold"),
-                                   padx=6, pady=3)
+                                   padx=6, pady=3, cursor="hand2")
         self.lbl_estado.pack(side="right", padx=(8, 0))
+        if not self.demo:      # clic en el estado: cambiar el turno de hoy
+            self.lbl_estado.bind("<Button-1>", lambda e: self._preguntar_inicio(forzar=True))
+        # Horas extra voluntarias: solo aparece fuera del turno (o en su corte)
+        self.b_extra = tk.Label(h, text="⏱ Horas extra", bg=C["card2"], fg=C["acc"], font=(FONT, 10, "bold"),
+                                padx=10, pady=3, cursor="hand2")
+        self.b_extra.bind("<Button-1>", lambda e: self._alternar_extra())
         # Pausa: lo UNICO que el PEM decide de su estado (almuerzo, reunion...). No recibe solicitudes mientras dure.
         self.b_pausa = tk.Label(h, text="⏸ Pausa", bg=C["card2"], fg=C["warn"], font=(FONT, 10, "bold"),
                                 padx=10, pady=3, cursor="hand2")
         if not self.demo:
             self.b_pausa.pack(side="right", padx=(8, 0))
         self.b_pausa.bind("<Button-1>", lambda e: self._alternar_pausa())
+        self._h_header = h
         # el subtitulo se oculta si la ventana es angosta
         h.bind("<Configure>", lambda e: (sub.pack_forget() if e.width < ad.px(640) else
                                          (sub.pack(side="left", pady=(8, 0)) if not sub.winfo_ismapped() else None)))
@@ -1140,6 +1234,11 @@ class App(tk.Tk):
             try:
                 from hac_zac import reportes
                 reportes.cerrar_conexion(carpeta, nombre)           # ultimo tramo en el reporte de conexion
+            except Exception:
+                pass
+            try:
+                from hac_zac import horas_extra
+                horas_extra.cerrar(carpeta, nombre)                 # horas extra en curso -> al reporte
             except Exception:
                 pass
         for v in (self.v_cola, self.v_admin):          # lectores y agente en segundo plano

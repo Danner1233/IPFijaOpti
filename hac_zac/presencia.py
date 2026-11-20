@@ -120,7 +120,7 @@ def texto_pausa(pausa):
     return ETIQUETA["pausa"] + (": " + pausa["razon"] if pausa.get("razon") else "") + hasta
 
 
-def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, pausa=None, caso=""):
+def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, pausa=None, caso="", extra=None):
     """Escribe mi estado y suma mis minutos en linea de hoy. Devuelve el registro escrito.
     Si hay dos ventanas abiertas en este PC (script y centro de control), se toma la actividad mas reciente y el
     tiempo no se cuenta doble (se suma desde el ultimo 'tick' guardado, no por ventana)."""
@@ -147,6 +147,8 @@ def publicar(carpeta_equipo, nombre, ultima_actividad, ocupado, ahora=None, paus
     pausa = pausa_vigente(pausa, ahora)
     if pausa:
         reg["pausa"] = {"hasta": pausa.get("hasta", ""), "razon": pausa.get("razon", "")}
+    if isinstance(extra, dict) and extra.get("desde"):       # horas extra en curso (ver horas_extra.py)
+        reg["extra"] = {k: extra.get(k, "") for k in ("tipo", "desde", "hasta", "motivo", "caso")}
     tmp = ruta + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(reg, f, ensure_ascii=False, indent=1)
@@ -177,10 +179,13 @@ def equipo(carpeta_equipo, ahora=None):
             if pausa:
                 estado = "pausa"            # abierta pero en pausa: no se le reparte
         hoy = r.get("fecha") == ahora.date().isoformat()
+        extra = r.get("extra") if estado != "desconectado" and isinstance(r.get("extra"), dict) else None
+        if extra and extra.get("hasta") and (_dt(extra["hasta"]) or ahora) <= ahora:
+            extra = None                        # voluntaria vencida (la app aun no publico el cierre)
         out.append({"nombre": r["nombre"], "estado": estado, "ultima_actividad": r.get("ultima_actividad") or "",
                     "actualizado": r.get("actualizado") or "",
                     "en_linea_hoy_min": int((r.get("en_linea_hoy_s") or 0) / 60) if hoy else 0,
-                    "pausa": pausa, "caso": r.get("caso") or ""})
+                    "pausa": pausa, "caso": r.get("caso") or "", "extra": extra})
     orden = {"en_linea": 0, "pausa": 1, "ausente": 2, "desconectado": 3}
     return sorted(out, key=lambda x: (orden.get(x["estado"], 3), x["nombre"].lower()))
 
@@ -203,10 +208,11 @@ def hace(iso, ahora=None):
 ETIQUETA = {"en_linea": "● Activo", "ausente": "◐ Ausente", "desconectado": "○ Desconectado", "pausa": "⏸ En pausa"}
 
 
-def situacion(estado, caso="", pausa=None, turno=None):
+def situacion(estado, caso="", pausa=None, turno=None, extra=None):
     """Lo que se muestra del PEM en Equipo/Admin: (clave, texto).
     en_proceso / disponible (activo con o sin solicitud), cierre (ultimos 30 min del turno: ya no recibe),
-    fuera_turno, pausa, ausente, desconectado. `turno` = turnos.situacion(franja) o None."""
+    extra (horas extra voluntarias: recibe), fuera_turno, pausa, ausente, desconectado.
+    `turno` = turnos.situacion(franja) o None. Si termino su turno con una abierta, la termina (horas extra)."""
     if estado == "desconectado":
         return "desconectado", ETIQUETA["desconectado"] + (" · con la %s" % caso if caso else "")
     if estado == "pausa" or pausa:
@@ -214,7 +220,12 @@ def situacion(estado, caso="", pausa=None, turno=None):
     if estado == "ausente":
         return "ausente", ETIQUETA["ausente"] + (" · con la %s" % caso if caso else "")
     if caso:
+        if turno in ("antes", "fuera") or extra:
+            return "en_proceso", "● En proceso · %s · horas extra (terminando)" % caso
         return "en_proceso", "● En proceso · %s" % caso
+    if extra and extra.get("tipo") == "Voluntaria":
+        h = _dt(extra.get("hasta"))
+        return "extra", "⏱ Horas extra" + (" hasta %s" % h.strftime("%H:%M") if h else "") + " (recibe)"
     if turno in ("antes", "fuera"):
         return "fuera_turno", "○ Fuera de turno"
     if turno == "corte":

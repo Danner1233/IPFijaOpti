@@ -33,13 +33,15 @@ def cerrada(pem, hace_s):
 
 class PruebasRitmo(unittest.TestCase):
     def test_tabla(self):
-        self.assertEqual([R.descanso_s(n) for n in (1, 3, 4, 5, 9)], [15, 15, 8, 0, 0])
+        self.assertEqual([R.descanso_s(n) for n in (1, 3, 4, 5, 9)], [90, 90, 45, 0, 0])
 
-    def test_pocas_libres_descansa_15_s(self):
+    def test_pocas_libres_descansa_1_min_30(self):
         items = [libre(1), libre(2), cerrada("Ana", 5)]
-        self.assertEqual(R.en_descanso(items, ROSTER, AHORA), {"Ana": 10})
+        self.assertEqual(R.en_descanso(items, ROSTER, AHORA), {"Ana": 85})
         self.assertEqual([n for _, n in R.plan(items, ROSTER, PRES, AHORA)], ["Beto"], "Ana descansa")
-        self.assertEqual(sorted(n for _, n in R.plan(items, ROSTER, PRES, AHORA + timedelta(seconds=11))),
+        self.assertEqual([n for _, n in R.plan(items, ROSTER, PRES, AHORA + timedelta(seconds=60))], ["Beto"],
+                         "al minuto sigue descansando")
+        self.assertEqual(sorted(n for _, n in R.plan(items, ROSTER, PRES, AHORA + timedelta(seconds=86))),
                          ["Ana", "Beto"], "paso el descanso")
 
     def test_muchas_libres_sin_descanso(self):
@@ -48,7 +50,7 @@ class PruebasRitmo(unittest.TestCase):
         self.assertEqual(sorted(n for _, n in R.plan(items, ROSTER, PRES, AHORA)), ["Ana", "Beto"])
 
     def test_cierre_viejo_no_cuenta(self):
-        self.assertEqual(R.en_descanso([libre(1), cerrada("Ana", 120)], ROSTER, AHORA), {})
+        self.assertEqual(R.en_descanso([libre(1), cerrada("Ana", 200)], ROSTER, AHORA), {})
 
 
 # ---------------------------------------------------------------------------------------------- Excel de prueba

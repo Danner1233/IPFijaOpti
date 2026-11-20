@@ -961,6 +961,149 @@ class DialogoPausa(tk.Toplevel):
         self.destroy()
 
 
+class DialogoExtra(tk.Toplevel):
+    """Horas extra voluntarias (fuera del turno): motivo y cuanto tiempo. self.resultado = (minutos, motivo)."""
+
+    def __init__(self, padre):
+        from . import horas_extra
+        super().__init__(padre)
+        self.resultado = None
+        self.title("Horas extra")
+        self.configure(bg=C["bg"])
+        self.transient(padre.winfo_toplevel())
+        caja = tk.Frame(self, bg=C["bg"])
+        caja.pack(fill="both", expand=True, padx=ad.px(22), pady=ad.px(18))
+        tk.Label(caja, text="⏱ Seguir en horas extra", bg=C["bg"], fg=C["txt"], font=(FONT, 12, "bold"),
+                 anchor="w").pack(fill="x")
+        tk.Label(caja, text="Mientras duren puede recibir solicitudes (hasta %d min antes de terminar). Queda en el "
+                 "reporte de horas extra." % horas_extra.CORTE_EXTRA_MIN, bg=C["bg"], fg=C["mut"], font=(FONT, 9),
+                 anchor="w", justify="left", wraplength=ad.px(420)).pack(fill="x", pady=(4, 10))
+        tk.Label(caja, text="Motivo:", bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"), anchor="w").pack(fill="x")
+        self.motivo = ttk.Combobox(caja, values=horas_extra.MOTIVOS_EXTRA, font=(FONT, 10), width=34)
+        self.motivo.pack(fill="x", pady=(4, 10), ipady=3)
+        tk.Label(caja, text="¿Cuánto tiempo?", bg=C["bg"], fg=C["mut"], font=(FONT, 9, "bold"),
+                 anchor="w").pack(fill="x")
+        self.min = tk.IntVar(value=60)
+        fila = ad.Flujo(caja, C["bg"], hueco=8)
+        fila.pack(fill="x", pady=(4, 10))
+        for m in horas_extra.MINUTOS_EXTRA:
+            tk.Radiobutton(fila, text=("%d min" % m) if m < 60 else ("%g h" % (m / 60.0)), variable=self.min,
+                           value=m, bg=C["bg"], fg=C["txt"], activebackground=C["bg"], selectcolor=C["card"],
+                           font=(FONT, 10), bd=0, highlightthickness=0).pack(side="left")
+        self.lbl = tk.Label(caja, text="", bg=C["bg"], fg=C["err"], font=(FONT, 9), anchor="w")
+        self.lbl.pack(fill="x")
+        b = ad.Flujo(caja, C["bg"])
+        b.pack(fill="x", pady=(6, 0))
+        BOTON(b, "Empezar horas extra", self._aceptar, True, 20).pack(side="left")
+        BOTON(b, "Cancelar", self.destroy, False, 10).pack(side="left", padx=6)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.update_idletasks()
+        self.minsize(min(ad.px(440), self.winfo_screenwidth() - 40), self.winfo_reqheight())
+        self.grab_set()
+        self.motivo.focus_set()
+        self.wait_window()
+
+    def _aceptar(self):
+        motivo = self.motivo.get().strip()
+        if not motivo:
+            self.lbl.config(text="Escriba o elija el motivo.")
+            return
+        self.resultado = (int(self.min.get()), motivo)
+        self.destroy()
+
+
+def _lista(padre, valores, alto):
+    lb = tk.Listbox(padre, height=alto, bg=C["card2"], fg=C["txt"], selectbackground=C["acc"],
+                    selectforeground=C["on_acc"], relief="flat", highlightthickness=0, font=(FONT, 10),
+                    activestyle="none", exportselection=False)
+    for v in valores:
+        lb.insert("end", v)
+    return lb
+
+
+class DialogoInicio(tk.Toplevel):
+    """Al abrir: «¿Quién es usted?» (solo la primera vez, de la lista del equipo) y «¿Qué turno va a manejar
+    hoy?» (lista A-F). self.resultado = (nombre, letra) o None."""
+
+    def __init__(self, padre, nombres, nombre="", letra="", pedir_nombre=True):
+        from . import turnos
+        super().__init__(padre)
+        self.resultado = None
+        self.nombres = list(nombres)
+        self.nombre_fijo = "" if pedir_nombre else nombre
+        self.turnos = turnos.lista_turnos()
+        self.title("Bienvenido" if pedir_nombre else "Turno de hoy")
+        self.configure(bg=C["bg"])
+        self.transient(padre.winfo_toplevel())
+        caja = tk.Frame(self, bg=C["bg"])
+        caja.pack(fill="both", expand=True, padx=ad.px(22), pady=ad.px(18))
+        if pedir_nombre:
+            tk.Label(caja, text="¿Quién es usted?", bg=C["bg"], fg=C["txt"], font=(FONT, 12, "bold"),
+                     anchor="w").pack(fill="x")
+            tk.Label(caja, text="Busque su nombre en la lista (se pregunta solo esta vez).", bg=C["bg"],
+                     fg=C["mut"], font=(FONT, 9), anchor="w").pack(fill="x", pady=(2, 6))
+            self.buscar = tk.Entry(caja, bg=C["card2"], fg=C["txt"], insertbackground=C["txt"], relief="flat",
+                                   font=(FONT, 10))
+            self.buscar.pack(fill="x", ipady=4)
+            self.buscar.bind("<KeyRelease>", lambda e: self._filtrar())
+            self.lb_nombre = _lista(caja, self.nombres, min(8, max(4, len(self.nombres))))
+            self.lb_nombre.pack(fill="x", pady=(4, 12))
+            self._visibles = list(self.nombres)
+        else:
+            tk.Label(caja, text="Hola, %s" % nombre, bg=C["bg"], fg=C["txt"], font=(FONT, 12, "bold"),
+                     anchor="w").pack(fill="x")
+        tk.Label(caja, text="¿Qué turno va a manejar hoy?", bg=C["bg"], fg=C["txt"], font=(FONT, 11, "bold"),
+                 anchor="w").pack(fill="x", pady=(4, 0))
+        tk.Label(caja, text="Solo recibe solicitudes en su turno; 30 min antes de salir deja de recibir.",
+                 bg=C["bg"], fg=C["mut"], font=(FONT, 9), anchor="w", justify="left",
+                 wraplength=ad.px(440)).pack(fill="x", pady=(2, 6))
+        self.lb_turno = _lista(caja, [t for _, t in self.turnos], len(self.turnos))
+        self.lb_turno.config(font=("Consolas", 10))
+        self.lb_turno.pack(fill="x")
+        letras = [l for l, _ in self.turnos]
+        if letra in letras:
+            self.lb_turno.selection_set(letras.index(letra))
+            self.lb_turno.see(letras.index(letra))
+        self.lbl = tk.Label(caja, text="", bg=C["bg"], fg=C["err"], font=(FONT, 9), anchor="w")
+        self.lbl.pack(fill="x", pady=(6, 0))
+        b = ad.Flujo(caja, C["bg"])
+        b.pack(fill="x", pady=(6, 0))
+        BOTON(b, "Listo", self._aceptar, True, 12).pack(side="left")
+        BOTON(b, "Más tarde", self.destroy, False, 12).pack(side="left", padx=6)
+        self.lb_turno.bind("<Double-Button-1>", lambda e: self._aceptar())
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.update_idletasks()
+        self.minsize(min(ad.px(480), self.winfo_screenwidth() - 40), self.winfo_reqheight())
+        self.grab_set()
+        (self.buscar if pedir_nombre else self.lb_turno).focus_set()
+        self.wait_window()
+
+    def _filtrar(self):
+        from .cola import _plano
+        q = _plano(self.buscar.get())
+        self._visibles = [n for n in self.nombres if all(w in _plano(n) for w in q.split())]
+        self.lb_nombre.delete(0, "end")
+        for n in self._visibles:
+            self.lb_nombre.insert("end", n)
+        if len(self._visibles) == 1:
+            self.lb_nombre.selection_set(0)
+
+    def _aceptar(self):
+        nombre = self.nombre_fijo
+        if not nombre:
+            sel = self.lb_nombre.curselection()
+            if not sel:
+                self.lbl.config(text="Elija su nombre de la lista.")
+                return
+            nombre = self._visibles[sel[0]]
+        sel = self.lb_turno.curselection()
+        if not sel:
+            self.lbl.config(text="Elija el turno que va a manejar.")
+            return
+        self.resultado = (nombre, self.turnos[sel[0]][0])
+        self.destroy()
+
+
 class DialogoDemora(tk.Toplevel):
     """Justificacion OBLIGATORIA cuando una solicitud supero el tiempo de gestion.
     Red CLARO: hasta 5 fotos (y una nota opcional). Redes neutras (ATP/ONNET): observacion escrita.

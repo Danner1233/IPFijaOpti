@@ -87,6 +87,40 @@ def aviso_salida(franja, ahora=None, aviso_min=AVISO_MIN):
     return bool(h) and h[1] - timedelta(minutes=aviso_min) <= ahora < h[1]
 
 
+# ---------------------------------------------------------------------------------------------- lista para elegir
+DIAS = {"A": "LUNES - JUEVES", "B": "VIERNES", "C": "LUNES - JUEVES", "D": "VIERNES", "E": "LUNES - JUEVES",
+        "F": "VIERNES"}
+
+
+def _ampm(hhmm):
+    h, m = (int(x) for x in hhmm.split(":"))
+    return "%d:%02d %s" % (h % 12 or 12, m, "AM" if h < 12 else "PM")
+
+
+def opcion(letra):
+    """'TURNO A   (8:00 AM - 5:30 PM)   LUNES - JUEVES' (como lo maneja el equipo)."""
+    ini, fin = TURNOS[letra]
+    return "TURNO %s   (%s - %s)   %s" % (letra, _ampm(ini), _ampm(fin), DIAS[letra])
+
+
+def lista_turnos():
+    return [(l, opcion(l)) for l in sorted(TURNOS)]
+
+
+def franja_de_letra(letra):
+    """A/B -> temprano, C/D -> medio, E/F -> tarde ('' si no es un turno)."""
+    l = str(letra or "").strip().upper()
+    for f, par in FRANJAS.items():
+        if l in par:
+            return f
+    return ""
+
+
+def hay_turno(dia):
+    """Ese dia se trabaja por turnos (lunes a sabado)."""
+    return dia.weekday() != 6
+
+
 def texto(franja, ahora=None):
     """'Turno A 8:00–17:30' / 'Sin turno hoy' / ''."""
     ahora = ahora or datetime.now()

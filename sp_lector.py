@@ -317,7 +317,8 @@ def repartir_equipo(driver, items, aj, log=print):
     if descansan:
         log("   [admin] ritmo (%d libres): descansan %s" % (sum(1 for it in items if cola.es_libre(it)), ", ".join(
             "%s %d s" % kv for kv in descansan.items())))
-    plan = reparto_equipo.plan(items, roster, reparto_equipo.presencia_por_nombre(carpeta))
+    plan = reparto_equipo.plan(items, roster, reparto_equipo.presencia_por_nombre(carpeta),
+                               extra=reparto_equipo.extras_por_nombre(carpeta))
     hechas = []
     for it, nombre in plan:
         if simular:
