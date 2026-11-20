@@ -284,6 +284,11 @@ class Servicio:
         except Exception:
             from . import log
             log.obtener("servicio").exception("no se pudo dejar la solicitud en el reporte")
+        try:        # la plantilla en la carpeta del PEM: Exitosas / No exitosas / Escalamiento
+            reportes.guardar_plantilla((self.ajustes.get("carpeta_equipo") or "").strip(), nombre, rec)
+        except Exception:
+            from . import log
+            log.obtener("servicio").exception("no se pudo guardar la plantilla en la carpeta del PEM")
 
     # ------------------------------------------------------------------ consulta
     def listar(self, filtro: str = ""):

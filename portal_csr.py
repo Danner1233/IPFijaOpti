@@ -53,7 +53,9 @@ CARPETA = os.path.dirname(os.path.abspath(__file__))
 
 
 class PortalError(Exception):
-    pass
+    def __init__(self, msg, codigo=""):
+        super().__init__(msg)
+        self.codigo = codigo          # 'no_encontrado': el portal no tiene esa MAC / serial
 
 
 # ------------------------------------------------------------------
@@ -251,7 +253,7 @@ def leer_info(d):
         )
     except TimeoutException:
         _click_ok_visibles(d, espera=2)   # posible mensaje "no encontrado"
-        raise PortalError("El portal no devolvio el dispositivo (no existe o no cargo).")
+        raise PortalError("El portal no devolvio el dispositivo (no existe o no cargo).", codigo="no_encontrado")
 
     time.sleep(0.8)
     return d.execute_script(JS_LEER)
@@ -367,7 +369,7 @@ def main():
         r = consultar(a.modo, a.valor, headless=HEADLESS, debug=a.debug)
         r["ok"] = True
     except Exception as e:
-        r = {"ok": False, "error": str(e)}
+        r = {"ok": False, "error": str(e), "codigo": getattr(e, "codigo", "")}
 
     if a.json:
         print(json.dumps(r, ensure_ascii=True))

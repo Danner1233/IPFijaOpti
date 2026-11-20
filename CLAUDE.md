@@ -121,3 +121,10 @@ Agente de IA que responde a técnicos (y luego por WhatsApp): lee el estado de l
   Prueba: test_flujo_automatico.
 - «↻ Reiniciar flujo» (`PanelCola._reiniciar`, visible con el flujo encendido): apaga y reabre los lectores en 3 s, sin
   la alerta de Detener; al cambiar «Ver navegador» con el flujo encendido ofrece reiniciar (`_cambio_ver`).
+- Fallas del ACS (Support Portal): no encuentra MAC/serial (`portal_csr` codigo «no_encontrado» → `PortalNoEncontrado`)
+  → «NO SE PUDO SACAR DATOS DEL CLIENTE MAC O SERIAL NO ENCONTRADA»; encuentra la ONT sin datos del cliente →
+  «ONT MAL APROVISIONADA, no se cuenta con los datos al cliente»; ambos + RR / REGIONAL / ALIADO (`falla_acs` en el
+  script, `plantilla.reporte_falla`/`motivo_acs` en la ventana: título en grande y «Copiar datos para reportar»).
+- Plantillas por resultado: al cerrar, `reportes.guardar_plantilla` deja la plantilla en
+  `reportes/<PEM>/<Exitosas|No exitosas|Escalamiento>/<AAAA-MM>/<solicitud>_<RR>.txt` (se mueve si cambia el resultado).
+  Prueba: test_acs_carpetas.

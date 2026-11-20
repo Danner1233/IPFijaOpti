@@ -1020,8 +1020,10 @@ class App(tk.Tk):
             self._copiar_portapapeles(plt.extraer_solicitud(t) or t, "✔ Solicitud copiada")
 
     def _copiar_reporte_fallo(self):
-        datos = plt.datos_reporte(self._texto_sol_run())
-        self._copiar_portapapeles(datos, "✔ Copiado: " + datos.replace("\n", " · "))
+        """RR / REGIONAL / ALIADO; si fallo el ACS, con su motivo arriba (MAC o serial no encontrada / ONT mal
+        aprovisionada)."""
+        datos = plt.reporte_falla(self._texto_sol_run(), getattr(self, "_error_fallo", ""))
+        self._copiar_portapapeles(datos, "✔ Copiado: " + " · ".join(l for l in datos.split("\n") if l))
 
     def _reintentar(self):
         """Vuelve a lanzar la misma solicitud (el script quedo esperando la siguiente en el jump host)."""
@@ -1177,8 +1179,14 @@ class App(tk.Tk):
             self.corriendo = False
             self.attributes("-topmost", False)
             self._marcar_pasos(paso, "error")
-            self.l_msg.config(text="El proceso se detuvo", fg=C["err"])
-            self.l_sub.config(text=(e.get("error") or "")[:300])
+            self._error_fallo = e.get("error") or ""
+            motivo = plt.motivo_acs(self._error_fallo)
+            if motivo:                      # fallo del ACS: el motivo en grande y RR / REGIONAL / ALIADO debajo
+                self.l_msg.config(text=motivo, fg=C["err"])
+                self.l_sub.config(text=plt.datos_reporte(self._texto_sol_run()))
+            else:
+                self.l_msg.config(text="El proceso se detuvo", fg=C["err"])
+                self.l_sub.config(text=(e.get("error") or "")[:300])
             self.ask.pack_forget()
             self._pill("Error", C["err"])
             if not self.log_visible:
@@ -1191,6 +1199,7 @@ class App(tk.Tk):
         elif fase == "cancelado":
             self.corriendo = False
             self.attributes("-topmost", False)
+            self._error_fallo = ""
             self.l_msg.config(text="Proceso cancelado")
             self.l_sub.config(text="")
             self._pill("Cancelado", C["warn"])

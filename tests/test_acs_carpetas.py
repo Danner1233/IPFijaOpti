@@ -1,0 +1,109 @@
+# -*- coding: utf-8 -*-
+"""Fallas del ACS (MAC/serial no encontrada, ONT mal aprovisionada) con RR / REGIONAL / ALIADO, y plantillas
+guardadas por resultado en la carpeta del PEM."""
+import os
+import re
+import sys
+import tempfile
+import unittest
+from datetime import datetime
+
+os.environ.setdefault("HAC_ZAC_DATOS", tempfile.mkdtemp(prefix="hz_acs_"))
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, RAIZ)
+sys.path.insert(0, os.path.join(RAIZ, "tests"))
+from hac_zac import plantilla as P, reportes  # noqa: E402
+from test_fallo_copiar import SOLICITUD  # noqa: E402
+
+DATOS = "RR: 64767642\nREGIONAL: Occidente\nALIADO: CONECTAR"
+
+
+def funciones_script():
+    """Las funciones del script de SecureCRT (py2.7/py3) sin cargar todo el script."""
+    with open(os.path.join(RAIZ, "SCRIPT_HAC_ZAC_UNIFICADO.py"), encoding="utf-8") as f:
+        src = f.read()
+    ns = {"re": re}
+    i = src.index("def solo_ascii")
+    j = src.index("\n\n\n", src.index("return t.encode"))
+    exec(src[i:j], ns)
+    k = src.index("# Fallas del aplicativo ACS")
+    exec(src[k:src.index("def consultar_portal")], ns)
+    return ns
+
+
+class PruebasScript(unittest.TestCase):
+    def setUp(self):
+        self.s = funciones_script()
+
+    def test_no_encontrada(self):
+        self.assertEqual(self.s["falla_acs"](self.s["ACS_NO_ENCONTRADA"], SOLICITUD),
+                         "NO SE PUDO SACAR DATOS DEL CLIENTE MAC O SERIAL NO ENCONTRADA\n\n" + DATOS)
+
+    def test_mal_aprovisionada(self):
+        self.assertEqual(self.s["falla_acs"](self.s["ACS_MAL_APROVISIONADA"], SOLICITUD),
+                         "ONT MAL APROVISIONADA, no se cuenta con los datos al cliente\n\n" + DATOS)
+
+    def test_mismos_textos_que_la_ventana(self):
+        self.assertEqual((self.s["ACS_NO_ENCONTRADA"], self.s["ACS_MAL_APROVISIONADA"]),
+                         (P.ACS_NO_ENCONTRADA, P.ACS_MAL_APROVISIONADA))
+        self.assertEqual(self.s["datos_reporte_sol"](SOLICITUD), P.datos_reporte(SOLICITUD))
+
+    def test_el_script_usa_los_mensajes(self):
+        with open(os.path.join(RAIZ, "SCRIPT_HAC_ZAC_UNIFICADO.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("except PortalNoEncontrado:\n        raise ProcesoError(falla_acs(ACS_NO_ENCONTRADA", src)
+        self.assertIn("raise ProcesoError(falla_acs(ACS_MAL_APROVISIONADA, txt_sol))", src)
+        with open(os.path.join(RAIZ, "portal_csr.py"), encoding="utf-8") as f:
+            self.assertIn('codigo="no_encontrado"', f.read())
+
+
+class PruebasVentana(unittest.TestCase):
+    def test_copiar_con_motivo(self):
+        err = P.ACS_NO_ENCONTRADA + "\n\n" + DATOS
+        self.assertEqual(P.motivo_acs(err), P.ACS_NO_ENCONTRADA)
+        self.assertEqual(P.reporte_falla(SOLICITUD, err), P.ACS_NO_ENCONTRADA + "\n\n" + DATOS)
+        self.assertEqual(P.reporte_falla(SOLICITUD, P.ACS_MAL_APROVISIONADA),
+                         P.ACS_MAL_APROVISIONADA + "\n\n" + DATOS)
+
+    def test_otra_falla_solo_los_datos(self):
+        self.assertEqual(P.motivo_acs("No se pudo identificar la IP del Capa 3"), "")
+        self.assertEqual(P.reporte_falla(SOLICITUD, "No se pudo identificar la IP del Capa 3"), DATOS)
+
+
+class PruebasCarpetasPorResultado(unittest.TestCase):
+    def setUp(self):
+        self.c = tempfile.mkdtemp()
+        self.rec = {"id": "65164", "rr": "2637758", "resultado": "Exitosa", "preview": "PLANTILLA\nIP: 1.2.3.4\n",
+                    "documentada_en": "2026-11-20T10:00:00"}
+
+    def ruta(self, sub):
+        return os.path.join(self.c, "reportes", "Danner Arias", sub, "2026-11", "65164_2637758.txt")
+
+    def test_exitosa(self):
+        r = reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
+        self.assertEqual(r, self.ruta("Exitosas"))
+        with open(r, encoding="utf-8-sig") as f:
+            self.assertEqual(f.read(), "PLANTILLA\nIP: 1.2.3.4\n")
+
+    def test_no_exitosa_y_escalamiento(self):
+        for est, sub in (("No exitosa", "No exitosas"), ("Escalamiento", "Escalamiento")):
+            rec = dict(self.rec, resultado=est, documentada_en="", cerrada_en="2026-11-20T11:00:00")
+            self.assertEqual(reportes.guardar_plantilla(self.c, "Danner Arias", rec), self.ruta(sub))
+
+    def test_si_cambia_el_resultado_se_mueve(self):
+        reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
+        reportes.guardar_plantilla(self.c, "Danner Arias", dict(self.rec, resultado="No exitosa"))
+        self.assertFalse(os.path.exists(self.ruta("Exitosas")))
+        self.assertTrue(os.path.exists(self.ruta("No exitosas")))
+
+    def test_sin_resultado_o_sin_carpeta_no_guarda(self):
+        self.assertIsNone(reportes.guardar_plantilla(self.c, "Danner Arias", dict(self.rec, resultado="")))
+        self.assertIsNone(reportes.guardar_plantilla("", "Danner Arias", self.rec))
+
+    def test_no_confunde_los_reportes(self):
+        reportes.guardar_plantilla(self.c, "Danner Arias", self.rec)
+        self.assertEqual(reportes.leer(self.c, "solicitudes", datetime(2026, 11, 20)), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

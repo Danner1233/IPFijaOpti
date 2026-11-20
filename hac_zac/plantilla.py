@@ -431,6 +431,27 @@ def con_bridge(descripcion):
     return "%s_BRIDGE" % descripcion if descripcion else ""
 
 
+# Fallas del aplicativo ACS (los mismos textos que pone el script de SecureCRT)
+ACS_NO_ENCONTRADA = "NO SE PUDO SACAR DATOS DEL CLIENTE MAC O SERIAL NO ENCONTRADA"
+ACS_MAL_APROVISIONADA = "ONT MAL APROVISIONADA, no se cuenta con los datos al cliente"
+
+
+def motivo_acs(error):
+    """El texto de la falla del ACS si el error es uno de esos; si no, ''."""
+    t = str(error or "").strip()
+    for m in (ACS_NO_ENCONTRADA, ACS_MAL_APROVISIONADA):
+        if t.upper().startswith(m.upper()):
+            return m
+    return ""
+
+
+def reporte_falla(texto_solicitud, error=""):
+    """Lo que se copia para reportar: el motivo del ACS (si lo es) + RR / REGIONAL / ALIADO."""
+    m = motivo_acs(error)
+    datos = datos_reporte(texto_solicitud)
+    return "%s\n\n%s" % (m, datos) if m else datos
+
+
 def datos_reporte(texto_solicitud):
     """Lo que se pide para reportar una falla, sacado de la solicitud:
     RR: 64767642 / REGIONAL: Occidente / ALIADO: CONECTAR."""

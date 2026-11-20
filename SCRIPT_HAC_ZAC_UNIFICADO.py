@@ -1515,6 +1515,34 @@ def solo_ascii(texto):
     return t.encode("ascii") if str is bytes else t
 
 
+# Fallas del aplicativo ACS (Support Portal): el texto exacto que pide el equipo + RR / REGIONAL / ALIADO.
+ACS_NO_ENCONTRADA = "NO SE PUDO SACAR DATOS DEL CLIENTE MAC O SERIAL NO ENCONTRADA"
+ACS_MAL_APROVISIONADA = "ONT MAL APROVISIONADA, no se cuenta con los datos al cliente"
+
+
+class PortalNoEncontrado(Exception):
+    pass
+
+
+def _campo_sol(txt, patron):
+    m = re.search(patron, txt or "", re.I | re.M)
+    return m.group(1).strip() if m else ""
+
+
+def datos_reporte_sol(txt_sol):
+    """RR / REGIONAL / ALIADO de la solicitud pegada (igual que plantilla.datos_reporte de la interfaz)."""
+    t = solo_ascii(txt_sol or "")
+    if not isinstance(t, str):
+        t = t.decode("ascii", "ignore")
+    rr = re.sub(r"\D", "", _campo_sol(t, r"CUENTA\s*RR:[ \t]*(.*)").split(".")[0])
+    return "RR: {}\nREGIONAL: {}\nALIADO: {}".format(
+        rr, _campo_sol(t, r"^[ \t]*REGIONAL:[ \t]*(.*)"), _campo_sol(t, r"^[ \t]*ALIADO:[ \t]*(.*)"))
+
+
+def falla_acs(motivo, txt_sol):
+    return "{}\n\n{}".format(motivo, datos_reporte_sol(txt_sol))
+
+
 def consultar_portal(modo, valor):
     """Llama a portal_csr.py y devuelve el dict del portal (o lanza Exception)."""
     ruta = ruta_portal_script()
@@ -1553,6 +1581,8 @@ def consultar_portal(modo, valor):
         raise Exception("Respuesta invalida del portal.\n\n{}\n{}".format(out, err))
 
     if not datos.get("ok"):
+        if datos.get("codigo") == "no_encontrado":
+            raise PortalNoEncontrado(solo_ascii(datos.get("error", "")))
         raise Exception(solo_ascii(datos.get("error", "Error desconocido")))
 
     # Texto del portal sin acentos (los equipos no los aceptan y Python 2 falla al formatearlos)
@@ -1600,8 +1630,11 @@ def pedir_datos_ont():
 
     UI.paso(1, "Consultando el Support Portal ({})".format(modo.upper()))
 
+    txt_sol = sol.get("txt_sol", "") or ""
     try:
         r = consultar_portal(modo, valor)
+    except PortalNoEncontrado:
+        raise ProcesoError(falla_acs(ACS_NO_ENCONTRADA, txt_sol))
     except Exception as e:
         raise ProcesoError("No se pudo consultar el portal: {}".format(e))
 
@@ -1611,10 +1644,10 @@ def pedir_datos_ont():
     rr = r.get("cuenta_rr", "")
 
     if not ip_valida(ont_ip) or not sn_ont or not nombre or not rr:
-        raise ProcesoError(
-            "El portal respondio con datos incompletos. IP: {} | Serial: {} | "
-            "Cliente: {} | RR (mycust04): {}".format(ont_ip, sn_ont, nombre, rr)
-        )
+        # entro a la ONT pero no estan los datos del cliente
+        UI.log("Portal incompleto. IP: {} | Serial: {} | Cliente: {} | RR (mycust04): {}".format(
+            ont_ip, sn_ont, nombre, rr), "warn")
+        raise ProcesoError(falla_acs(ACS_MAL_APROVISIONADA, txt_sol))
 
     RES.update({
         "cliente": nombre,

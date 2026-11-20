@@ -247,6 +247,42 @@ def registrar_solicitud(carpeta_equipo, nombre, rec, sol_cola=None, ahora=None):
     return registro
 
 
+# ---------------------------------------------------------------------------------------------- plantillas por resultado
+# reportes/<PEM>/<Exitosas|No exitosas|Escalamiento>/<AAAA-MM>/<solicitud>_<RR>.txt
+CARPETA_RESULTADO = {"Exitosa": "Exitosas", "No exitosa": "No exitosas", "Escalamiento": "Escalamiento"}
+
+
+def _nombre_archivo(rec):
+    partes = [str(rec.get("id") or rec.get("key") or "").strip(), re.sub(r"\D", "", str(rec.get("rr") or ""))]
+    base = "_".join(p for p in partes if p) or "solicitud"
+    return re.sub(r"[^\w\-]", "_", base) + ".txt"
+
+
+def guardar_plantilla(carpeta_equipo, nombre, rec, ahora=None):
+    """Al cerrar la solicitud, su plantilla queda en la carpeta del PEM segun el resultado. Si despues se cambia
+    el resultado, se mueve (se borra de la otra carpeta). Devuelve la ruta o None."""
+    from . import estados
+    est = estados.normalizar((rec or {}).get("resultado") or "")
+    sub = CARPETA_RESULTADO.get(est)
+    texto = str((rec or {}).get("preview") or "")
+    if not (carpeta_equipo and nombre and sub and texto.strip()):
+        return None
+    cuando = _dt(rec.get("documentada_en") or rec.get("cerrada_en") or "") or ahora or datetime.now()
+    archivo_txt = _nombre_archivo(rec)
+    base = os.path.join(carpeta(carpeta_equipo), carpeta_pem(nombre))
+    mes = cuando.strftime("%Y-%m")
+    for otra in CARPETA_RESULTADO.values():
+        if otra != sub:
+            vieja = os.path.join(base, otra, mes, archivo_txt)
+            if os.path.isfile(vieja):
+                os.remove(vieja)
+    destino = os.path.join(base, sub, mes, archivo_txt)
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    with open(destino, "w", encoding="utf-8-sig", newline="\r\n") as f:
+        f.write(texto.replace("\r\n", "\n"))
+    return destino
+
+
 # ---------------------------------------------------------------------------------------------- leer / resumen
 def leer(carpeta_equipo, tipo, mes):
     """Filas (dict) de todos los PEM de un tipo y mes (datetime/date)."""
